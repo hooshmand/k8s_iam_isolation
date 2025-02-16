@@ -3,15 +3,25 @@ import boto3
 import logging
 import yaml
 import subprocess
+import os
 from kubernetes import client, config
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+# Load Configuration
+CONFIG_FILE = "config.yaml"
+DEFAULTS = {"namespace": "default-namespace", "aws_account_id": None}
+
+if os.path.exists(CONFIG_FILE):
+    with open(CONFIG_FILE, "r") as file:
+        CONFIG = yaml.safe_load(file) or {}
+        DEFAULTS.update(CONFIG)
+
 # Initialize AWS Clients
 iam_client = boto3.client("iam")
 eks_client = boto3.client("eks")
-account_id = boto3.client("sts").get_caller_identity().get("Account")
+account_id = DEFAULTS.get("aws_account_id") or boto3.client("sts").get_caller_identity().get("Account")
 
 # Load Kubernetes Config
 try:
@@ -38,24 +48,23 @@ def get_current_k8s_cluster():
         return "Unknown Cluster"
 
 
-def modify_aws_auth(entity_name, entity_type, remove=False):
+def modify_aws_auth(entity_name, entity_type, remove=False, dry_run=False):
     """Update aws-auth ConfigMap to add/remove IAM users, groups, or roles."""
+    action = "Removing" if remove else "Adding"
+
+    if dry_run:
+        logging.info(f"📝 [Dry Run] {action} {entity_type} '{entity_name}' to aws-auth ConfigMap.")
+        return
+
     try:
         aws_auth_cm = k8s_api.read_namespaced_config_map("aws-auth", "kube-system")
         map_key = "mapUsers" if entity_type == "user" else "mapRoles"
 
-        if entity_type == "role":
-            new_entry = {
-                "rolearn": f"arn:aws:iam::{account_id}:role/{entity_name}",
-                "username": entity_name,
-                "groups": [f"{entity_name}-group"]
-            }
-        else:
-            new_entry = {
-                "userarn": f"arn:aws:iam::{account_id}:{entity_type}/{entity_name}",
-                "username": entity_name,
-                "groups": [f"{entity_name}-group"]
-            }
+        new_entry = {
+            "userarn" if entity_type != "role" else "rolearn": f"arn:aws:iam::{account_id}:{entity_type}/{entity_name}",
+            "username": entity_name,
+            "groups": [f"{entity_name}-group"]
+        }
 
         existing_entries = yaml.safe_load(aws_auth_cm.data.get(map_key, "[]"))
 
@@ -81,10 +90,11 @@ def cli():
 
 
 @cli.command()
-@click.option("--namespace", prompt="Enter Kubernetes namespace", help="Kubernetes namespace for the IAM entity.")
+@click.option("--namespace", default=DEFAULTS["namespace"], prompt="Enter Kubernetes namespace", help="Kubernetes namespace for the IAM entity.")
 @click.option("--entity-name", prompt="Enter IAM User/Group/Role name", help="IAM User, Group, or Role name.")
 @click.option("--entity-type", type=click.Choice(["user", "group", "role"]), prompt="Is this a user, group, or role?", help="Specify whether the entity is an IAM user, group, or role.")
-def create(namespace, entity_name, entity_type):
+@click.option("--dry-run", is_flag=True, help="Simulate the action without applying changes.")
+def create(namespace, entity_name, entity_type, dry_run):
     """Create namespace isolation for an AWS IAM user, group, or role"""
     current_user = get_current_k8s_user()
     current_cluster = get_current_k8s_cluster()
@@ -96,61 +106,19 @@ def create(namespace, entity_name, entity_type):
         logging.info("❌ Action aborted by the user.")
         return
 
-    modify_aws_auth(entity_name, entity_type, remove=False)
+    modify_aws_auth(entity_name, entity_type, remove=False, dry_run=dry_run)
     logging.info(f"✅ {entity_type.capitalize()} '{entity_name}' successfully restricted to namespace '{namespace}'.")
 
 
 @cli.command()
-@click.option("--namespace", prompt="Enter Kubernetes namespace", help="Namespace to remove access from.")
+@click.option("--namespace", default=DEFAULTS["namespace"], prompt="Enter Kubernetes namespace", help="Namespace to remove access from.")
 @click.option("--entity-name", prompt="Enter IAM User/Group/Role name", help="IAM User, Group, or Role name.")
 @click.option("--entity-type", type=click.Choice(["user", "group", "role"]), prompt="Is this a user, group, or role?", help="Specify whether the entity is an IAM user, group, or role.")
-def delete(namespace, entity_name, entity_type):
+@click.option("--dry-run", is_flag=True, help="Simulate the action without applying changes.")
+def delete(namespace, entity_name, entity_type, dry_run):
     """Revoke access and delete IAM user, group, or role from aws-auth ConfigMap"""
-    current_user = get_current_k8s_user()
-    current_cluster = get_current_k8s_cluster()
-
-    logging.info(f"🔍 Running command as Kubernetes user: {current_user}")
-    logging.info(f"🔍 Target cluster: {current_cluster}")
-
-    if not click.confirm(f"⚠️ Are you sure you want to remove {entity_type} '{entity_name}' from namespace '{namespace}' on cluster '{current_cluster}'?", abort=True):
-        logging.info("❌ Action aborted by the user.")
-        return
-
-    modify_aws_auth(entity_name, entity_type, remove=True)
+    modify_aws_auth(entity_name, entity_type, remove=True, dry_run=dry_run)
     logging.info(f"✅ {entity_type.capitalize()} '{entity_name}' access removed from namespace '{namespace}'.")
-
-
-@cli.command()
-def list_entities():
-    """List all IAM users, groups, and roles with Kubernetes bindings"""
-    try:
-        # List IAM Users
-        users = iam_client.list_users()["Users"]
-        click.echo("\n👤 IAM Users:")
-        for user in users:
-            click.echo(f"  - {user['UserName']} - {user['Arn']}")
-
-        # List IAM Groups
-        groups = iam_client.list_groups()["Groups"]
-        click.echo("\n👥 IAM Groups:")
-        for group in groups:
-            click.echo(f"  - {group['GroupName']} - {group['Arn']}")
-
-        # List IAM Roles
-        roles = iam_client.list_roles()["Roles"]
-        click.echo("\n🎭 IAM Roles:")
-        for role in roles:
-            click.echo(f"  - {role['RoleName']} - {role['Arn']}")
-
-        # Fetch and Display Kubernetes Role Bindings
-        click.echo("\n🔗 Kubernetes Role Bindings:")
-        role_bindings = k8s_api.list_namespaced_role_binding("kube-system").items
-        for rb in role_bindings:
-            subjects = ", ".join([s.name for s in rb.subjects])
-            click.echo(f"  - {rb.metadata.name} (Subjects: {subjects})")
-
-    except Exception as e:
-        logging.error(f"Error retrieving IAM/Kubernetes information: {e}")
 
 
 if __name__ == "__main__":
