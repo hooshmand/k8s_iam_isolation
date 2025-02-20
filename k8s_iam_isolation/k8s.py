@@ -1,49 +1,26 @@
+
 import click
-import boto3
-import logging
 import yaml
-import subprocess
-import os
+import logging
 from kubernetes import client, config
 
-# Setup Logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Load Configuration
-CONFIG_FILE = "config.yaml"
-DEFAULTS = {"namespace": "default-namespace", "aws_account_id": None}
-
-if os.path.exists(CONFIG_FILE):
-    with open(CONFIG_FILE, "r") as file:
-        CONFIG = yaml.safe_load(file) or {}
-        DEFAULTS.update(CONFIG)
-
-# Initialize AWS Clients
-iam_client = boto3.client("iam")
-eks_client = boto3.client("eks")
-account_id = DEFAULTS.get("aws_account_id") or boto3.client("sts").get_caller_identity().get("Account")
-
-# Load Kubernetes Config
-try:
-    config.load_kube_config()  # Use local kubeconfig
-except Exception:
-    config.load_incluster_config()  # Use in-cluster config if running in Kubernetes
-
+config.load_kube_config()
 k8s_api = client.CoreV1Api()
 
 
 def get_current_k8s_user():
-    """Fetch the current Kubernetes user from kubectl config"""
+    """Fetch the current Kubernetes user from the kubeconfig"""
     try:
-        return subprocess.check_output(["kubectl", "config", "view", "--minify", "-o", "jsonpath='{.contexts[0].context.user}'"], text=True).strip().strip("'")
+        context, active_context = config.list_kube_config_contexts()
+        return active_context["context"]["user"] if active_context else "Unknown User"
     except Exception:
         return "Unknown User"
 
-
 def get_current_k8s_cluster():
-    """Fetch the current Kubernetes cluster from kubectl config"""
+    """Fetch the current Kubernetes cluster/context from the kubeconfig"""
     try:
-        return subprocess.check_output(["kubectl", "config", "current-context"], text=True).strip()
+        return config.list_kube_config_contexts()[1]["name"]
     except Exception:
         return "Unknown Cluster"
 
@@ -83,14 +60,8 @@ def modify_aws_auth(entity_name, entity_type, remove=False, dry_run=False):
         logging.error(f"Failed to update aws-auth ConfigMap: {e}")
 
 
-@click.group()
-def cli():
-    """Kubernetes Namespace Isolation CLI for AWS IAM Users, Groups & Roles"""
-    pass
-
-
-@cli.command()
-@click.option("--namespace", default=DEFAULTS["namespace"], prompt="Enter Kubernetes namespace", help="Kubernetes namespace for the IAM entity.")
+@click.command()
+@click.option("--namespace", required=True, prompt="Enter Kubernetes namespace", help="Kubernetes namespace for the IAM entity.")
 @click.option("--entity-name", prompt="Enter IAM User/Group/Role name", help="IAM User, Group, or Role name.")
 @click.option("--entity-type", type=click.Choice(["user", "group", "role"]), prompt="Is this a user, group, or role?", help="Specify whether the entity is an IAM user, group, or role.")
 @click.option("--dry-run", is_flag=True, help="Simulate the action without applying changes.")
@@ -99,27 +70,22 @@ def create(namespace, entity_name, entity_type, dry_run):
     current_user = get_current_k8s_user()
     current_cluster = get_current_k8s_cluster()
 
-    logging.info(f"🔍 Running command as Kubernetes user: {current_user}")
-    logging.info(f"🔍 Target cluster: {current_cluster}")
+    click.echo(f"🔍 Running as Kubernetes user: {current_user} on cluster: {current_cluster}")
 
-    if not click.confirm(f"⚠️ Are you sure you want to add {entity_type} '{entity_name}' to namespace '{namespace}' on cluster '{current_cluster}'?", abort=True):
-        logging.info("❌ Action aborted by the user.")
+    if not click.confirm(f"⚠️ Confirm adding {entity_type} '{entity_name}' to namespace '{namespace}'?", abort=True):
+        click.echo("❌ Action aborted.")
         return
 
     modify_aws_auth(entity_name, entity_type, remove=False, dry_run=dry_run)
-    logging.info(f"✅ {entity_type.capitalize()} '{entity_name}' successfully restricted to namespace '{namespace}'.")
+    click.echo(f"✅ {entity_type.capitalize()} '{entity_name}' successfully added to namespace '{namespace}'.")
 
 
-@cli.command()
-@click.option("--namespace", default=DEFAULTS["namespace"], prompt="Enter Kubernetes namespace", help="Namespace to remove access from.")
+@click.command()
+@click.option("--namespace", required=True, prompt="Enter Kubernetes namespace", help="Namespace to remove access from.")
 @click.option("--entity-name", prompt="Enter IAM User/Group/Role name", help="IAM User, Group, or Role name.")
 @click.option("--entity-type", type=click.Choice(["user", "group", "role"]), prompt="Is this a user, group, or role?", help="Specify whether the entity is an IAM user, group, or role.")
 @click.option("--dry-run", is_flag=True, help="Simulate the action without applying changes.")
 def delete(namespace, entity_name, entity_type, dry_run):
-    """Revoke access and delete IAM user, group, or role from aws-auth ConfigMap"""
+    """Remove IAM user, group, or role from Kubernetes"""
     modify_aws_auth(entity_name, entity_type, remove=True, dry_run=dry_run)
-    logging.info(f"✅ {entity_type.capitalize()} '{entity_name}' access removed from namespace '{namespace}'.")
-
-
-if __name__ == "__main__":
-    cli()
+    click.echo(f"✅ {entity_type.capitalize()} '{entity_name}' access removed from namespace '{namespace}'.")
