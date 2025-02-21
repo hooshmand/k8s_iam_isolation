@@ -44,7 +44,3 @@ def update(ctx: click.Context, log_file):
 
     save_config(ctx.obj["config"])
     click.echo(f"Config file updated.")
-
-
-if __name__ == "__main__":
-    cli()
