@@ -20,11 +20,12 @@ dependencies = [
     "click",
     "boto3",
     "kubernetes",
-    "pyyaml"
+    "pyyaml",
+    "inquirer"
 ]
 
 [project.scripts]
-k8s-iam = "k8s_iam_isolation.cli:cli"
+k8s-iam = "k8s_iam_isolation.main:cli"
 
 
 [project.urls]

@@ -3,6 +3,8 @@ import click
 import yaml
 import logging
 from kubernetes import client, config
+from k8s_iam_isolation.main import cli
+from k8s_iam_isolation.aws import list_iam_users, list_iam_roles
 
 
 config.load_kube_config()
@@ -89,3 +91,7 @@ def delete(namespace, entity_name, entity_type, dry_run):
     """Remove IAM user, group, or role from Kubernetes"""
     modify_aws_auth(entity_name, entity_type, remove=True, dry_run=dry_run)
     click.echo(f"✅ {entity_type.capitalize()} '{entity_name}' access removed from namespace '{namespace}'.")
+
+
+cli.add_command(create)
+cli.add_command(delete)

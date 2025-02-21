@@ -1,6 +1,8 @@
 import boto3
 import click
 import logging
+from k8s_iam_isolation.main import cli
+
 
 iam_client = boto3.client("iam")
 account_id = boto3.client("sts").get_caller_identity().get("Account")
@@ -64,3 +66,11 @@ def list_entities():
     click.echo("\n🎭 IAM Roles:")
     for role in roles:
         click.echo(f"  - {role['name']} - {role['arn']}")
+
+
+@cli.group()
+def aws():
+    """Bulk operations on notes."""
+    pass
+
+aws.add_command(list_entities)
