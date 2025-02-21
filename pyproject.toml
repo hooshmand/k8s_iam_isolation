@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 [project.scripts]
-k8s-iam = "k8s_iam_isolation.main:cli"
+k8s-iam = "k8s_iam_isolation:main"
 
 
 [project.urls]
