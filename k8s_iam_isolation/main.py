@@ -1,5 +1,4 @@
 import click
-import k8s_iam_isolation.k8s as k8s
 from k8s_iam_isolation.config import get_config, save_config
 
 
