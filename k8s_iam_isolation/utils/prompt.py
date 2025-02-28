@@ -1,5 +1,5 @@
 from dataclasses import field, fields, MISSING
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, List, Optional, Union
 from InquirerPy import inquirer
 
 
@@ -8,7 +8,7 @@ def PromptField(prompt_type: str,
                default: Any = MISSING,
                validate: Optional[Callable[[Any], bool]] = None,
                transform: Optional[Callable[[Any], Any]] = None,
-               choices: Optional[List[Any]] = None,
+               choices: Optional[Union[List[Any], Callable[[], List[Any]]]] = None,
                prompt_args: Optional[dict] = None):
     """
     Helper to create a dataclass field with attached InquirerPy prompt metadata.
@@ -75,7 +75,9 @@ class PromptData:
                 # InquirerPy uses 'filter' to transform the result before returning
                 prompt_kwargs["filter"] = meta["transform"]
             if "choices" in meta:
-                prompt_kwargs["choices"] = meta["choices"]
+                choices = meta["choices"]
+                # If choices is a callable, call it to generate the list
+                prompt_kwargs["choices"] = choices() if callable(choices) else choices
 
             # Invoke the appropriate InquirerPy prompt function
             prompt_func = getattr(inquirer, prompt_type)
