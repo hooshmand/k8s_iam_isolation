@@ -65,7 +65,7 @@ def modify_aws_auth(entity_name, entity_type, remove=False, dry_run=False):
 @click.command()
 @click.option("--namespace", required=True, prompt="Enter Kubernetes namespace", help="Kubernetes namespace for the IAM entity.")
 @click.option("--entity-name", prompt="Enter IAM User/Group/Role name", help="IAM User, Group, or Role name.")
-@click.option("--entity-type", type=click.Choice(["user", "group", "role"]), prompt="Is this a user, group, or role?", help="Specify whether the entity is an IAM user, group, or role.")
+@click.option("--entity-type", type=click.Choice(["user", "role"]), prompt="Is this a user, group, or role?", help="Specify whether the entity is an IAM user, group, or role.")
 @click.option("--dry-run", is_flag=True, help="Simulate the action without applying changes.")
 def create(namespace, entity_name, entity_type, dry_run):
     """Create namespace isolation for an AWS IAM user, group, or role"""
@@ -85,7 +85,7 @@ def create(namespace, entity_name, entity_type, dry_run):
 @click.command()
 @click.option("--namespace", required=True, prompt="Enter Kubernetes namespace", help="Namespace to remove access from.")
 @click.option("--entity-name", prompt="Enter IAM User/Group/Role name", help="IAM User, Group, or Role name.")
-@click.option("--entity-type", type=click.Choice(["user", "group", "role"]), prompt="Is this a user, group, or role?", help="Specify whether the entity is an IAM user, group, or role.")
+@click.option("--entity-type", type=click.Choice(["user", "role"]), prompt="Is this a user, group, or role?", help="Specify whether the entity is an IAM user, group, or role.")
 @click.option("--dry-run", is_flag=True, help="Simulate the action without applying changes.")
 def delete(namespace, entity_name, entity_type, dry_run):
     """Remove IAM user, group, or role from Kubernetes"""
