@@ -6,6 +6,7 @@ from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 from InquirerPy.validator import EmptyInputValidator
 from kubernetes import client, config
+from kubernetes.client.rest import ApiException
 from k8s_iam_isolation.main import cli
 from k8s_iam_isolation.aws import list_iam_users, list_iam_roles
 from k8s_iam_isolation.utils.prompt import PromptData, PromptField
@@ -113,6 +114,43 @@ class K8sClient(PromptData):
 
         except Exception as e:
             logging.error(f"Failed to update aws-auth ConfigMap: {e}")
+
+    def upsert_custom_role(
+            self,
+            name: str,
+            namespace: str,
+            rules: List[client.V1PolicyRule]) -> client.V1Role:
+        """
+        Update or Create a custom Role with specific permissions in a namespace.
+
+        Args:
+            name: Name of the Role
+            namespace: Namespace to create the Role in
+            rules: List of PolicyRules for the Role
+
+        Returns:
+            The created V1Role object
+        """
+        role_body = client.V1Role(
+            metadata=client.V1ObjectMeta(
+                name=name,
+                namespace=namespace),
+            rules=[client.V1PolicyRule(**rule) for rule in rules]
+        )
+
+        try:
+            current_role = self.rbac_v1.read_namespaced_role(name=name, namespace=namespace)
+            updated_role = self.rbac_v1.replace_namespaced_role(name=name, namespace=namespace, body=role_body)
+            logging.info(f"Updated Role {name} in namespace {namespace}")
+            return updated_role
+        except ApiException as e:
+            if e.status == 404:
+                logging.info(f"Role {name} in namespace {namespace} doesn't exit.")
+                created_role = self.rbac_v1.create_namespaced_role(namespace=namespace, body=role_body)
+                logging.info(f"Created Role {name} in namespace {namespace}")
+                return created_role
+            else:
+                raise e
 
 
 @click.command()
