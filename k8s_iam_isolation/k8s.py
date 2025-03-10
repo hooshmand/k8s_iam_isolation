@@ -172,6 +172,8 @@ class K8sClient(PromptData):
             The created V1Role object
         """
         role_body = client.V1Role(
+            api_version="rbac.authorization.k8s.io/v1",
+            kind="Role",
             metadata=client.V1ObjectMeta(
                 name=name,
                 namespace=namespace),
@@ -207,6 +209,8 @@ class K8sClient(PromptData):
             The created V1Role object
         """
         role_body = client.V1Role(
+            api_version="rbac.authorization.k8s.io/v1",
+            kind="ClusterRole",
             metadata=client.V1ObjectMeta(name=name),
             rules=rules
         )
