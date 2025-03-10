@@ -27,7 +27,6 @@ class K8sClient(PromptData):
         choices=_k8s_contexts
     )
 
-
     def __init__(self, dry_run: bool=False):
         self.from_prompt()
         config.load_kube_config(context=self.context)
@@ -91,14 +90,12 @@ class K8sClient(PromptData):
                 # Create new ConfigMap if it doesn't exist
                 aws_auth_cm = self._create_aws_auth()
 
-
-
             map_key = "mapUsers" if entity_type == "user" else "mapRoles"
 
             new_entry = {
                 "userarn" if entity_type != "role" else "rolearn": f"{entity.arn}",
                 "username": entity.name,
-                "groups": [f"{entity.name}-group"]
+                "groups": ["system:authenticated"]
             }
 
             existing_entries = yaml.safe_load(aws_auth_cm.data.get(map_key, "[]"))
