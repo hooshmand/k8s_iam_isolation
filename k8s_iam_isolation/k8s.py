@@ -44,7 +44,7 @@ class K8sClient(PromptData):
         try:
             aws_auth_cm = self.core_v1.read_namespaced_config_map("aws-auth", "kube-system")
             return aws_auth_cm
-        except client.exceptions.ApiException as e:
+        except ApiException as e:
             if e.status == 404:
                 logging.warning("aws-auth ConfigMap not found. Create a new one.")
                 return None
@@ -73,7 +73,7 @@ class K8sClient(PromptData):
                 body=body
             )
             return aws_auth_cm
-        except client.exceptions.ApiException as e:
+        except ApiException as e:
             logging.error(f"Failed to create aws-auth ConfigMap: {e}")
             raise e
 
