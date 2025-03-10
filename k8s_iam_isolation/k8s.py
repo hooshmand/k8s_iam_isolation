@@ -2,6 +2,7 @@
 import click
 import yaml
 import logging
+from dataclasses import dataclass
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 from InquirerPy.validator import EmptyInputValidator
@@ -20,9 +21,9 @@ def _k8s_contexts():
     context_choices = [Choice(name=context.get("name"), value=context) for context in contexts]
     return context_choices
 
-
+@dataclass
 class K8sClient(PromptData):
-    context = PromptField(
+    context: Dict = PromptField(
         prompt_type="select",
         message="Choose the correct context:",
         choices=_k8s_contexts
