@@ -115,6 +115,46 @@ class K8sClient(PromptData):
         except Exception as e:
             logging.error(f"Failed to update aws-auth ConfigMap: {e}")
 
+    def check_role_exists(self, name: str, namespace: str):
+        """Check if a Role exists in the specified namespace."""
+        try:
+            self.rbac_v1.read_namespaced_role(name=name, namespace=namespace)
+            return True
+        except ApiException as e:
+            if e.status == 404:
+                return False
+            raise e
+
+    def check_cluster_role_exists(self, name: str):
+        """Check if a ClusterRole exists."""
+        try:
+            self.rbac_v1.read_cluster_role(name=name)
+            return True
+        except ApiException as e:
+            if e.status == 404:
+                return False
+            raise e
+
+    def check_role_binding_exists(self, name: str, namespace: str):
+        """Check if a RoleBinding exists in the specified namespace."""
+        try:
+            self.rbac_v1.read_namespaced_role_binding(name=name, namespace=namespace)
+            return True
+        except ApiException as e:
+            if e.status == 404:
+                return False
+            raise e
+
+    def check_cluster_role_binding_exists(self, name: str):
+        """Check if a ClusterRoleBinding exists."""
+        try:
+            self.rbac_v1.read_cluster_role_binding(name=name)
+            return True
+        except ApiException as e:
+            if e.status == 404:
+                return False
+            raise e
+
     def upsert_custom_role(
             self,
             name: str,
