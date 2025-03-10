@@ -135,7 +135,7 @@ class K8sClient(PromptData):
             metadata=client.V1ObjectMeta(
                 name=name,
                 namespace=namespace),
-            rules=[client.V1PolicyRule(**rule) for rule in rules]
+            rules=rules
         )
 
         try:
@@ -149,6 +149,39 @@ class K8sClient(PromptData):
                 created_role = self.rbac_v1.create_namespaced_role(namespace=namespace, body=role_body)
                 logging.info(f"Created Role {name} in namespace {namespace}")
                 return created_role
+            else:
+                raise e
+
+    def upsert_custom_cluster_role(
+            self,
+            name: str,
+            rules: List[client.V1PolicyRule]) -> client.V1Role:
+        """
+        Update or Create a custom Cluster Role with specific permissions.
+
+        Args:
+            name: Name of the Role
+            rules: List of PolicyRules for the Role
+
+        Returns:
+            The created V1Role object
+        """
+        role_body = client.V1Role(
+            metadata=client.V1ObjectMeta(name=name),
+            rules=rules
+        )
+
+        try:
+            current_cluster_role = self.rbac_v1.read_cluster_role(name=name)
+            updated_cluster_role = self.rbac_v1.replace_cluster_role(name=name, body=role_body)
+            logging.info(f"Updated Cluster Role {name}.")
+            return updated_cluster_role
+        except ApiException as e:
+            if e.status == 404:
+                logging.info(f"Cluster Role {name} doesn't exit.")
+                created_cluster_role = self.rbac_v1.create_cluster_role(body=role_body)
+                logging.info(f"Created Cluster Role {name}.")
+                return created_cluster_role
             else:
                 raise e
 
