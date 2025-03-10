@@ -179,18 +179,18 @@ class K8sClient(PromptData):
         )
 
         try:
-            current_role = self.rbac_v1.read_namespaced_role(name=name, namespace=namespace)
-            updated_role = self.rbac_v1.replace_namespaced_role(name=name, namespace=namespace, body=role_body)
-            logging.info(f"Updated Role {name} in namespace {namespace}")
-            return updated_role
-        except ApiException as e:
-            if e.status == 404:
-                logging.info(f"Role {name} in namespace {namespace} doesn't exit.")
-                created_role = self.rbac_v1.create_namespaced_role(namespace=namespace, body=role_body)
-                logging.info(f"Created Role {name} in namespace {namespace}")
-                return created_role
+            role_exits = self.check_role_exists(name=name, namespace=namespace)
+
+            if role_exits:
+                role = self.rbac_v1.replace_namespaced_role(name=name, namespace=namespace, body=role_body)
+                logging.info(f"Updated Role {name} in namespace {namespace}")
             else:
-                raise e
+                role = self.rbac_v1.create_namespaced_role(namespace=namespace, body=role_body)
+                logging.info(f"Created Role {name} in namespace {namespace}")
+        except ApiException as e:
+            raise e
+
+        return role
 
     def upsert_custom_cluster_role(
             self,
@@ -212,18 +212,19 @@ class K8sClient(PromptData):
         )
 
         try:
-            current_cluster_role = self.rbac_v1.read_cluster_role(name=name)
-            updated_cluster_role = self.rbac_v1.replace_cluster_role(name=name, body=role_body)
-            logging.info(f"Updated Cluster Role {name}.")
-            return updated_cluster_role
-        except ApiException as e:
-            if e.status == 404:
-                logging.info(f"Cluster Role {name} doesn't exit.")
+            cluster_role_exits = self.check_cluster_role_exists(name=name)
+
+            if cluster_role_exits:
+                cluster_role = self.rbac_v1.replace_cluster_role(name=name, body=role_body)
+                logging.info(f"Updated Cluster Role {name}.")
+            else:
                 created_cluster_role = self.rbac_v1.create_cluster_role(body=role_body)
                 logging.info(f"Created Cluster Role {name}.")
-                return created_cluster_role
-            else:
-                raise e
+
+        except ApiException as e:
+            raise e
+
+        return cluster_role
 
 
 @click.command()
