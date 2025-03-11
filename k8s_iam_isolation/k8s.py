@@ -22,7 +22,7 @@ def _k8s_contexts():
     return context_choices
 
 
-def _default_predefined_rules():
+def _default_predefined_rules() -> Dict:
     """Load the default predefined rules from a yaml file."""
 
     with open("predefined_rbac_rules.yaml", "r") as file:
@@ -38,7 +38,7 @@ class K8sClient(PromptData):
         choices=_k8s_contexts
     )
 
-    def __init__(self, predefined_rules: List, dry_run: bool=False):
+    def __init__(self, predefined_rules: Dict, dry_run: bool=False):
         self.from_prompt()
         config.load_kube_config(context=self.context)
         self.predefined_rules = predefined_rules
@@ -248,7 +248,7 @@ class K8sClient(PromptData):
 @click.option("--dry-run", is_flag=True, help="Simulate the action without applying changes.")
 def create(_obj: dict, entity_type, dry_run):
     """Create namespace isolation for an AWS IAM user or role"""
-    predefined_rules: List = _obj["config"].get("predefined_rules", None)
+    predefined_rules: Dict | None = _obj["config"].get("predefined_rules", None)
     if predefined_rules is None:
         predefined_rules = _default_predefined_rules()
         _obj["config"]["predefined_rules"] = predefined_rules
