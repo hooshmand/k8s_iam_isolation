@@ -21,6 +21,15 @@ def _k8s_contexts():
     context_choices = [Choice(name=context.get("name"), value=context) for context in contexts]
     return context_choices
 
+
+def _default_predefined_rules():
+    """Load the default predefined rules from a yaml file."""
+
+    with open("predefined_rbac_rules.yaml", "r") as file:
+        predefined_rbac_rules = yaml.safe_load(file)
+    return predefined_rbac_rules.get("predefined_rules")
+
+
 @dataclass
 class K8sClient(PromptData):
     context: Dict = PromptField(
@@ -29,9 +38,10 @@ class K8sClient(PromptData):
         choices=_k8s_contexts
     )
 
-    def __init__(self, dry_run: bool=False):
+    def __init__(self, predefined_rules: List, dry_run: bool=False):
         self.from_prompt()
         config.load_kube_config(context=self.context)
+        self.predefined_rules = predefined_rules
         self.dry_run = dry_run
         self.core_v1 = client.CoreV1Api()
         self.apps_v1 = client.AppsV1Api()
@@ -233,11 +243,16 @@ class K8sClient(PromptData):
 
 
 @click.command()
+@click.pass_obj
 @click.option("--entity-type", type=click.Choice(["user", "role"]), prompt="Is this a user or role?", help="Specify whether the entity is an IAM user or role.")
 @click.option("--dry-run", is_flag=True, help="Simulate the action without applying changes.")
-def create(entity_type, dry_run):
-    """Create namespace isolation for an AWS IAM user, group, or role"""
-    k8c = K8sClient(dry_run=dry_run)
+def create(_obj: dict, entity_type, dry_run):
+    """Create namespace isolation for an AWS IAM user or role"""
+    predefined_rules: List = _obj["config"].get("predefined_rules", None)
+    if predefined_rules is None:
+        predefined_rules = _default_predefined_rules()
+        _obj["config"]["predefined_rules"] = predefined_rules
+    k8c = K8sClient(predefined_rules=predefined_rules, dry_run=dry_run)
 
     entities = list_iam_users() if entity_type == "user" else list_iam_roles()
     entity = inquirer.fuzzy(
