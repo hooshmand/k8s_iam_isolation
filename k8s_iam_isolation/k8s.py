@@ -262,16 +262,23 @@ def create(_obj: dict, entity_type, dry_run):
     ).execute()
     click.echo(f"Selected {entity.name} with ARN: {entity.arn}")
 
+    #ToDo: Selecet or Create the namespace
     namespace = inquirer.text(
         message="Enter Kubernetes namespace:",
         validate=EmptyInputValidator("Namespace should not be empty")
     ).execute()
+
+    #ToDo: Selecet a predefined rule
 
     if not click.confirm(f"⚠️ Confirm adding {entity_type} '{entity.name}' access to namespace '{namespace}'?", abort=True):
         click.echo("❌ Action aborted.")
         return
 
     k8c.modify_aws_auth(entity, entity_type, remove=False)
+
+    #ToDo: Create a Role
+    #ToDo: Create a RoleBinding
+
     click.echo(f"✅ {entity_type.capitalize()} '{entity.arn}' successfully added to namespace '{namespace}'.")
 
 
