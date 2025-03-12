@@ -18,7 +18,7 @@ from typing import Dict, List
 def _k8s_contexts():
     """Fetch the Kubernetes contexts from the kubeconfig"""
     context_choices = []
-    contexts = config.list_kube_config_contexts()
+    contexts, default_context = config.list_kube_config_contexts()
     context_choices = [Choice(name=context["context"].get("name"), value=context) for context in contexts]
     return context_choices
 
