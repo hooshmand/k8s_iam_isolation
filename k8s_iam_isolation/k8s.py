@@ -2,6 +2,7 @@
 import click
 import yaml
 import logging
+import os
 from dataclasses import dataclass
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
@@ -25,7 +26,7 @@ def _k8s_contexts():
 def _default_predefined_rules() -> Dict:
     """Load the default predefined rules from a yaml file."""
 
-    with open("predefined_rbac_rules.yaml", "r") as file:
+    with open(os.path.join(os.path.dirname(__file__), 'predefined_rbac_rules.yaml'), "r") as file:
         predefined_rbac_rules = yaml.safe_load(file)
     return predefined_rbac_rules.get("predefined_rules")
 
