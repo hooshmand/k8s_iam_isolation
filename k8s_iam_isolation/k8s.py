@@ -30,6 +30,20 @@ def _default_predefined_rules() -> Dict:
     return predefined_rbac_rules.get("predefined_rules")
 
 
+def _get_policy_rules(rule_config: List) -> List:
+    # Convert the configuration to V1PolicyRule objects
+    policy_rules = []
+    for rule in rule_config:
+        policy_rule = client.V1PolicyRule(
+            api_groups=rule.get('apiGroups', []),
+            resources=rule.get('resources', []),
+            verbs=rule.get('verbs', []),
+            resource_names=rule.get('resourceNames', None)
+        )
+        policy_rules.append(policy_rule)
+    return policy_rules
+
+
 @dataclass
 class K8sClient(PromptData):
     context: Dict = PromptField(
@@ -269,14 +283,22 @@ def create(_obj: dict, entity_type, dry_run):
     ).execute()
 
     #ToDo: Selecet a predefined rule
+    policy_rule_name = inquirer.fuzzy(
+        message="Select the access level:",
+        choices=[Choice(rule_name) for rule_name in predefined_rules.keys()],
+        max_height="50%",
+    ).execute()
 
-    if not click.confirm(f"⚠️ Confirm adding {entity_type} '{entity.name}' access to namespace '{namespace}'?", abort=True):
+    if not click.confirm(f"⚠️ Confirm adding {entity_type} '{entity.name}' with {policy_rule_name} access to namespace '{namespace}'?", abort=True):
         click.echo("❌ Action aborted.")
         return
 
     k8c.modify_aws_auth(entity, entity_type, remove=False)
 
     #ToDo: Create a Role
+    role_name = f"{entity.name}-{policy_rule_name}"
+    policy_rules = _get_policy_rules(predefined_rules.get(policy_rule_name))
+    new_role = k8c.upsert_custom_role(role_name, namespace, policy_rules)
     #ToDo: Create a RoleBinding
 
     click.echo(f"✅ {entity_type.capitalize()} '{entity.arn}' successfully added to namespace '{namespace}'.")
