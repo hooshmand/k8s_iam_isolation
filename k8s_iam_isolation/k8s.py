@@ -53,9 +53,9 @@ class K8sClient(PromptData):
         choices=_k8s_contexts
     )
 
-    def __init__(self, predefined_rules: Dict, dry_run: bool=False):
+    def __init__(self, predefined_rules: Dict, context: Dict, dry_run: bool=False):
         self.from_prompt()
-        config.load_kube_config(context=self.context)
+        config.load_kube_config(context=context)
         self.predefined_rules = predefined_rules
         self.dry_run = dry_run
         self.core_v1 = client.CoreV1Api()
