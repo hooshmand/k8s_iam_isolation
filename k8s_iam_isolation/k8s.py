@@ -255,6 +255,70 @@ class K8sClient(PromptData):
 
         return cluster_role
 
+    def upsert_custom_rolebinding(
+            self,
+            name: str,
+            namespace: str,
+            role_name: str,
+            suject_name: str,
+            kind: str = "User") -> client.V1RoleBinding:
+        """
+        Update or Create a RoleBinding to assign a Role to a specific user.
+
+        Args:
+            name: Name of the RoleBinding
+            namespace: Namespace where the RoleBinding will be created
+            role_name: Name of the Role to bind
+            suject_name: Name of the subject to bind the Role to
+            kind: Subject kind (default: "User", can also be "Group" or "ServiceAccount")
+
+        Returns:
+            The created/updated RoleBinding object
+        """
+        rolebinding_body = client.V1RoleBinding(
+            api_version="rbac.authorization.k8s.io/v1",
+            kind="RoleBinding",
+            metadata=client.V1ObjectMeta(
+                name=name,
+                namespace=namespace
+            ),
+            role_ref=client.V1RoleRef(
+                api_group="rbac.authorization.k8s.io",
+                kind="Role",
+                name=role_name
+            ),
+            subjects=[
+                client.V1Subject(
+                    kind=kind,
+                    name=suject_name,
+                    namespace=namespace if kind == "ServiceAccount" else None
+                )
+            ]
+        )
+
+        try:
+            role_binding_exits = self.check_role_binding_exists(name, namespace)
+            if role_binding_exits:
+                # Update the existing Role Binding
+                rolebinding = self.rbac_v1.replace_namespaced_role_binding(
+                    name=name,
+                    namespace=namespace,
+                    body=rolebinding_body
+                )
+                logging.info(f"Updated RoleBinding {name} in namespace {namespace}")
+            else:
+                # Create a new Role Binding
+                rolebinding = self.rbac_v1.create_namespaced_role_binding(
+                    namespace=namespace,
+                    body=rolebinding_body
+                )
+                logging.info(f"Created RoleBinding {name} in namespace {namespace}")
+        except ApiException as e:
+            logging.error(f"Error upserting RoleBinding {name} in namespace {namespace}: {e}")
+            raise
+
+        return rolebinding
+
 
 @click.command()
 @click.pass_obj
@@ -300,6 +364,11 @@ def create(_obj: dict, entity_type, dry_run):
     policy_rules = _get_policy_rules(predefined_rules.get(policy_rule_name))
     new_role = k8c.upsert_custom_role(role_name, namespace, policy_rules)
     #ToDo: Create a RoleBinding
+    role_binding = k8c.upsert_custom_rolebinding(
+        name=role_name,
+        namespace=namespace,
+        role_name=role_name,
+        suject_name=entity.name)
 
     click.echo(f"✅ {entity_type.capitalize()} '{entity.arn}' successfully added to namespace '{namespace}'.")
 
