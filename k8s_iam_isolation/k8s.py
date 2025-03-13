@@ -3,7 +3,7 @@ import click
 import yaml
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 from InquirerPy.validator import EmptyInputValidator
@@ -11,7 +11,7 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from k8s_iam_isolation.main import cli
 from k8s_iam_isolation.aws import list_iam_users, list_iam_roles
-from k8s_iam_isolation.utils.prompt import PromptData, PromptField
+from k8s_iam_isolation.utils.prompt import PromptField, prompt_factory
 from typing import Dict, List
 
 
@@ -19,7 +19,7 @@ def _k8s_contexts():
     """Fetch the Kubernetes contexts from the kubeconfig"""
     context_choices = []
     contexts, default_context = config.list_kube_config_contexts()
-    context_choices = [Choice(name=context["context"].get("name"), value=context) for context in contexts]
+    context_choices = [Choice(context.get("name")) for context in contexts]
     return context_choices
 
 
@@ -46,18 +46,17 @@ def _get_policy_rules(rule_config: List) -> List:
 
 
 @dataclass
-class K8sClient(PromptData):
+class K8sClient:
     context: Dict = PromptField(
         prompt_type="select",
         message="Choose the correct context:",
         choices=_k8s_contexts
     )
+    predefined_rules: Dict
+    dry_run: bool = field(default=False)
 
-    def __init__(self, predefined_rules: Dict, context: Dict, dry_run: bool=False):
-        self.from_prompt()
-        config.load_kube_config(context=context)
-        self.predefined_rules = predefined_rules
-        self.dry_run = dry_run
+    def __post_init__(self, **kwargs):
+        config.load_kube_config(context=self.context)
         self.core_v1 = client.CoreV1Api()
         self.apps_v1 = client.AppsV1Api()
         self.rbac_v1 = client.RbacAuthorizationV1Api()
@@ -331,7 +330,8 @@ def create(_obj: dict, entity_type, dry_run):
     if predefined_rules is None:
         predefined_rules = _default_predefined_rules()
         _obj["config"]["predefined_rules"] = predefined_rules
-    k8c = K8sClient(predefined_rules=predefined_rules, dry_run=dry_run)
+    vars = prompt_factory(K8sClient)
+    k8c = K8sClient(predefined_rules=predefined_rules, dry_run=dry_run, **vars)
 
     entities = list_iam_users() if entity_type == "user" else list_iam_roles()
     entity = inquirer.fuzzy(

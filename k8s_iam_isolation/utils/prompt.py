@@ -1,5 +1,5 @@
 from dataclasses import field, fields, MISSING
-from typing import Any, Callable, List, Optional, Union
+from typing import Any, Callable, List, Optional, Union, Dict
 from InquirerPy import inquirer
 
 
@@ -37,50 +37,47 @@ def PromptField(prompt_type: str,
         return field(default=default, metadata=meta)
 
 
-class PromptData:
-    """Base class that adds an interactive prompt method for dataclass fields."""
-    @classmethod
-    def from_prompt(cls):
-        """
-        Prompt the user for each field's value and return an instance of the dataclass.
-        Uses the metadata in each field to determine prompt type, message, default, etc.
-        """
-        values = {}
-        for field_def in fields(cls):  # iterate over dataclass fields
-            meta = field_def.metadata
-            if not meta or "prompt_type" not in meta:
-                # Skip fields that have no prompt metadata
-                continue
+def prompt_factory(cls) -> Dict:
+    """
+    Prompt the user for each field's value and return an instance of the dataclass.
+    Uses the metadata in each field to determine prompt type, message, default, etc.
+    """
+    values = {}
+    for field_def in fields(cls):  # iterate over dataclass fields
+        meta = field_def.metadata
+        if not meta or "prompt_type" not in meta:
+            # Skip fields that have no prompt metadata
+            continue
 
-            prompt_type = meta["prompt_type"]
-            message = meta.get("message", field_def.name)
-            # Determine default value (if any)
-            default_val = None
-            if field_def.default is not MISSING and field_def.default is not None:
-                default_val = field_def.default
-            # If a default factory is set (callable), call it to get a default value
-            if field_def.default_factory is not MISSING:  # default_factory for dataclass
-                default_val = field_def.default_factory()
+        prompt_type = meta["prompt_type"]
+        message = meta.get("message", field_def.name)
+        # Determine default value (if any)
+        default_val = None
+        if field_def.default is not MISSING and field_def.default is not None:
+            default_val = field_def.default
+        # If a default factory is set (callable), call it to get a default value
+        if field_def.default_factory is not MISSING:  # default_factory for dataclass
+            default_val = field_def.default_factory()
 
-            # Gather prompt parameters
-            prompt_kwargs = {}
-            # Include any extra prompt arguments specified
-            prompt_kwargs.update(meta.get("prompt_args", {}))
-            prompt_kwargs["message"] = message
-            if default_val is not None:
-                prompt_kwargs["default"] = default_val
-            if "validate" in meta:
-                prompt_kwargs["validate"] = meta["validate"]
-            if "transform" in meta:
-                # InquirerPy uses 'filter' to transform the result before returning
-                prompt_kwargs["filter"] = meta["transform"]
-            if "choices" in meta:
-                choices = meta["choices"]
-                # If choices is a callable, call it to generate the list
-                prompt_kwargs["choices"] = choices() if callable(choices) else choices
+        # Gather prompt parameters
+        prompt_kwargs = {}
+        # Include any extra prompt arguments specified
+        prompt_kwargs.update(meta.get("prompt_args", {}))
+        prompt_kwargs["message"] = message
+        if default_val is not None:
+            prompt_kwargs["default"] = default_val
+        if "validate" in meta:
+            prompt_kwargs["validate"] = meta["validate"]
+        if "transform" in meta:
+            # InquirerPy uses 'filter' to transform the result before returning
+            prompt_kwargs["filter"] = meta["transform"]
+        if "choices" in meta:
+            choices = meta["choices"]
+            # If choices is a callable, call it to generate the list
+            prompt_kwargs["choices"] = choices() if callable(choices) else choices
 
-            # Invoke the appropriate InquirerPy prompt function
-            prompt_func = getattr(inquirer, prompt_type)
-            result = prompt_func(**prompt_kwargs).execute()  # run the prompt and get user input
-            values[field_def.name] = result
-        return cls(**values)  # Create an instance of the dataclass with collected values
+        # Invoke the appropriate InquirerPy prompt function
+        prompt_func = getattr(inquirer, prompt_type)
+        result = prompt_func(**prompt_kwargs).execute()  # run the prompt and get user input
+        values[field_def.name] = result
+    return values
