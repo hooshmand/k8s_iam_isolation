@@ -360,11 +360,10 @@ def create(_obj: dict, entity_type, dry_run):
 
     k8c.modify_aws_auth(entity, entity_type, remove=False)
 
-    #ToDo: Create a Role
     role_name = f"{entity.get("name")}-{policy_rule_name}"
     policy_rules = _get_policy_rules(predefined_rules.get(policy_rule_name))
     new_role = k8c.upsert_custom_role(role_name, namespace, policy_rules)
-    #ToDo: Create a RoleBinding
+
     role_binding = k8c.upsert_custom_rolebinding(
         name=role_name,
         namespace=namespace,
