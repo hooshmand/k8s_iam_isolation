@@ -260,7 +260,7 @@ class K8sClient:
             name: str,
             namespace: str,
             role_name: str,
-            suject_name: str,
+            subject_name: str,
             kind: str = "User") -> client.V1RoleBinding:
         """
         Update or Create a RoleBinding to assign a Role to a specific user.
@@ -269,7 +269,7 @@ class K8sClient:
             name: Name of the RoleBinding
             namespace: Namespace where the RoleBinding will be created
             role_name: Name of the Role to bind
-            suject_name: Name of the subject to bind the Role to
+            subject_name: Name of the subject to bind the Role to
             kind: Subject kind (default: "User", can also be "Group" or "ServiceAccount")
 
         Returns:
@@ -290,7 +290,7 @@ class K8sClient:
             subjects=[
                 client.V1Subject(
                     kind=kind,
-                    name=suject_name,
+                    name=subject_name,
                     namespace=namespace if kind == "ServiceAccount" else None
                 )
             ]
@@ -336,32 +336,32 @@ def create(_obj: dict, entity_type, dry_run):
     entities = list_iam_users() if entity_type == "user" else list_iam_roles()
     entity = inquirer.fuzzy(
         message="Select IAM User/Role:",
-        choices=[Choice(name=entity.name, value=entity) for entity in entities],
+        choices=[Choice(name=entity.get("name"), value=entity) for entity in entities],
         max_height="50%",
     ).execute()
-    click.echo(f"Selected {entity.name} with ARN: {entity.arn}")
+    click.echo(f"Selected {entity.get("name")} with ARN: {entity.get("arn")}")
 
-    #ToDo: Selecet or Create the namespace
+    #ToDo: Select or Create the namespace
     namespace = inquirer.text(
         message="Enter Kubernetes namespace:",
         validate=EmptyInputValidator("Namespace should not be empty")
     ).execute()
 
-    #ToDo: Selecet a predefined rule
+    #ToDo: Select a predefined rule
     policy_rule_name = inquirer.fuzzy(
         message="Select the access level:",
         choices=[Choice(rule_name) for rule_name in predefined_rules.keys()],
         max_height="50%",
     ).execute()
 
-    if not click.confirm(f"⚠️ Confirm adding {entity_type} '{entity.name}' with {policy_rule_name} access to namespace '{namespace}'?", abort=True):
+    if not click.confirm(f"⚠️ Confirm adding {entity_type} '{entity.get("name")}' with {policy_rule_name} access to namespace '{namespace}'?", abort=True):
         click.echo("❌ Action aborted.")
         return
 
     k8c.modify_aws_auth(entity, entity_type, remove=False)
 
     #ToDo: Create a Role
-    role_name = f"{entity.name}-{policy_rule_name}"
+    role_name = f"{entity.get("name")}-{policy_rule_name}"
     policy_rules = _get_policy_rules(predefined_rules.get(policy_rule_name))
     new_role = k8c.upsert_custom_role(role_name, namespace, policy_rules)
     #ToDo: Create a RoleBinding
@@ -369,9 +369,9 @@ def create(_obj: dict, entity_type, dry_run):
         name=role_name,
         namespace=namespace,
         role_name=role_name,
-        suject_name=entity.name)
+        subject_name=entity.get("name"))
 
-    click.echo(f"✅ {entity_type.capitalize()} '{entity.arn}' successfully added to namespace '{namespace}'.")
+    click.echo(f"✅ {entity_type.capitalize()} '{entity.get("arn")}' successfully added to namespace '{namespace}'.")
 
 
 @click.command()
@@ -384,22 +384,22 @@ def delete(entity_type, dry_run):
     entities = list_iam_users() if entity_type == "user" else list_iam_roles()
     entity = inquirer.fuzzy(
         message="Select IAM User/Role:",
-        choices=[Choice(name=entity.name, value=entity) for entity in entities],
+        choices=[Choice(name=entity.get("name"), value=entity) for entity in entities],
         max_height="50%",
     ).execute()
-    click.echo(f"Selected {entity.name} with ARN: {entity.arn}")
+    click.echo(f"Selected {entity.get("name")} with ARN: {entity.get("arn")}")
 
     namespace = inquirer.text(
         message="Enter Kubernetes namespace:",
         validate=EmptyInputValidator("Namespace should not be empty")
     ).execute()
 
-    if not click.confirm(f"⚠️ Confirm deleting {entity_type} '{entity.name}' access to namespace '{namespace}'?", abort=True):
+    if not click.confirm(f"⚠️ Confirm deleting {entity_type} '{entity.get("name")}' access to namespace '{namespace}'?", abort=True):
         click.echo("❌ Action aborted.")
         return
 
     k8c.modify_aws_auth(entity, entity_type, remove=True)
-    click.echo(f"✅ {entity_type.capitalize()} '{entity.name}' access removed from namespace '{namespace}'.")
+    click.echo(f"✅ {entity_type.capitalize()} '{entity.get("name")}' access removed from namespace '{namespace}'.")
 
 
 cli.add_command(create)
