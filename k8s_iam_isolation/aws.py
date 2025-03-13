@@ -19,30 +19,66 @@ def account_id():
 
 
 def list_iam_users():
-    """List all IAM users."""
+    """
+    Get a list of all IAM users in the AWS account using pagination.
+
+    Returns:
+        list: List of IAM user dictionaries
+    """
     try:
-        users = iam_client.list_users()["Users"]
-        return [{"name": user["UserName"], "arn": user["Arn"]} for user in users]
+        # Create a paginator for the list_users operation
+        paginator = iam_client.get_paginator('list_users')
+        page_iterator = paginator.paginate()
+
+        all_users = []
+        # Iterate through each page and extend the list of users
+        for page in page_iterator:
+            all_users.extend(page['Users'])
+        return [{"name": user["UserName"], "arn": user["Arn"]} for user in all_users]
     except Exception as e:
         logging.error(f"Failed to list IAM users: {e}")
         return []
 
 
 def list_iam_groups():
-    """List all IAM groups."""
+    """
+    Get a list of all IAM groups in the AWS account using pagination.
+
+    Returns:
+        list: List of IAM group dictionaries
+    """
     try:
-        groups = iam_client.list_groups()["Groups"]
-        return [{"name": group["GroupName"], "arn": group["Arn"]} for group in groups]
+        # Create a paginator for the list_groups operation
+        paginator = iam_client.get_paginator('list_groups')
+        page_iterator = paginator.paginate()
+
+        all_groups = []
+        # Iterate through each page and extend the list of groups
+        for page in page_iterator:
+            all_groups.extend(page['Groups'])
+        return [{"name": group["GroupName"], "arn": group["Arn"]} for group in all_groups]
     except Exception as e:
         logging.error(f"Failed to list IAM groups: {e}")
         return []
 
 
 def list_iam_roles():
-    """List all IAM roles."""
+    """
+    Get a list of all IAM roles in the AWS account using pagination.
+
+    Returns:
+        list: List of IAM role dictionaries
+    """
     try:
-        roles = iam_client.list_roles()["Roles"]
-        return [{"name": role["RoleName"], "arn": role["Arn"]} for role in roles]
+        # Create a paginator for the list_roles operation
+        paginator = iam_client.get_paginator('list_roles')
+        page_iterator = paginator.paginate()
+
+        all_roles = []
+        # Iterate through each page and extend the list of roles
+        for page in page_iterator:
+            all_roles.extend(page['Roles'])
+        return [{"name": role["RoleName"], "arn": role["Arn"]} for role in all_roles]
     except Exception as e:
         logging.error(f"Failed to list IAM roles: {e}")
         return []
