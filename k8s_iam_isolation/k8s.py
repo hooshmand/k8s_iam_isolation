@@ -107,7 +107,7 @@ class K8sClient:
         action = "Removing" if remove else "Adding"
 
         if self.dry_run:
-            logging.info(f"📝 [Dry Run] {action} {entity_type} '{entity.name}' to aws-auth ConfigMap.")
+            logging.info(f"📝 [Dry Run] {action} {entity_type} '{entity.get("name")}' to aws-auth ConfigMap.")
             return
 
         try:
@@ -119,8 +119,8 @@ class K8sClient:
             map_key = "mapUsers" if entity_type == "user" else "mapRoles"
 
             new_entry = {
-                "userarn" if entity_type != "role" else "rolearn": f"{entity.arn}",
-                "username": entity.name,
+                "userarn" if entity_type != "role" else "rolearn": f"{entity.get("arn")}",
+                "username": entity.get("name"),
                 "groups": ["system:authenticated"]
             }
 
@@ -128,11 +128,11 @@ class K8sClient:
 
             if remove:
                 existing_entries = [entry for entry in existing_entries if entry.get("userarn", entry.get("rolearn")) != new_entry.get("userarn", new_entry.get("rolearn"))]
-                logging.info(f"✅ Removed {entity_type} '{entity.name}' from aws-auth ConfigMap.")
+                logging.info(f"✅ Removed {entity_type} '{entity.get("name")}' from aws-auth ConfigMap.")
             else:
                 if new_entry not in existing_entries:
                     existing_entries.append(new_entry)
-                    logging.info(f"✅ Added {entity_type} '{entity.name}' to aws-auth ConfigMap.")
+                    logging.info(f"✅ Added {entity_type} '{entity.get("name")}' to aws-auth ConfigMap.")
 
             aws_auth_cm.data[map_key] = yaml.dump(existing_entries)
             self.core_v1.patch_namespaced_config_map(name="aws-auth", namespace="kube-system", body=aws_auth_cm)
