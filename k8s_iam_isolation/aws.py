@@ -8,16 +8,6 @@ iam_client = boto3.client("iam")
 account_id = boto3.client("sts").get_caller_identity().get("Account")
 
 
-def account_id():
-    """List all IAM users."""
-    try:
-        users = iam_client.list_users()["Users"]
-        return [{"name": user["UserName"], "arn": user["Arn"]} for user in users]
-    except Exception as e:
-        logging.error(f"Failed to list IAM users: {e}")
-        return []
-
-
 def list_iam_users():
     """
     Get a list of all IAM users in the AWS account using pagination.
