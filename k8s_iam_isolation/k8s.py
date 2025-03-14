@@ -12,6 +12,7 @@ from kubernetes.client.rest import ApiException
 from k8s_iam_isolation.main import cli
 from k8s_iam_isolation.aws import list_iam_users, list_iam_roles
 from k8s_iam_isolation.utils.prompt import PromptField, prompt_factory
+from functools import wraps
 from typing import Dict, List
 
 
@@ -43,6 +44,29 @@ def _get_policy_rules(rule_config: List) -> List:
         )
         policy_rules.append(policy_rule)
     return policy_rules
+
+
+def dry_run_guard(mock_response=None):
+    """Decorator that enables dry-run behavior with dynamic mock responses."""
+    def decorator(method):
+        @wraps(method)
+        def wrapper(self, *args, **kwargs):
+            if self.dry_run:
+                logging.info(f"[Dry-Run] {method.__name__} called with args={args}, kwargs={kwargs}.")
+
+                # Check if a mock function is provided, else check if `default_mock_response` exists
+                if callable(mock_response):
+                    response = mock_response(self, *args, **kwargs)
+                elif hasattr(self, "_default_mock_response") and callable(getattr(self, "_default_mock_response")):
+                    response = self._default_mock_response(method, *args, **kwargs)
+                else:
+                    response = None
+
+                return response
+
+            return method(self, *args, **kwargs)
+        return wrapper
+    return decorator
 
 
 @dataclass
@@ -102,6 +126,7 @@ class K8sClient:
             logging.error(f"Failed to create aws-auth ConfigMap: {e}")
             raise e
 
+    @dry_run_guard()
     def modify_aws_auth(self, entity, entity_type, remove=False):
         """Update aws-auth ConfigMap to add/remove IAM users, groups, or roles."""
         action = "Removing" if remove else "Adding"
@@ -180,6 +205,7 @@ class K8sClient:
                 return False
             raise e
 
+    @dry_run_guard()
     def upsert_custom_role(
             self,
             name: str,
@@ -219,6 +245,7 @@ class K8sClient:
 
         return role
 
+    @dry_run_guard()
     def upsert_custom_cluster_role(
             self,
             name: str,
@@ -255,6 +282,7 @@ class K8sClient:
 
         return cluster_role
 
+    @dry_run_guard()
     def upsert_custom_rolebinding(
             self,
             name: str,
