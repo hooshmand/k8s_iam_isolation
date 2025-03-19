@@ -353,7 +353,7 @@ class K8sClient:
                 name=role_name
             ),
             subjects=[
-                client.V1Subject(
+                client.RbacV1Subject(
                     kind=kind,
                     name=subject_name,
                     namespace=namespace if kind == "ServiceAccount" else None
@@ -443,7 +443,7 @@ class K8sClient:
                 name=role_name
             ),
             subjects=[
-                client.V1Subject(
+                client.RbacV1Subject(
                     kind=kind,
                     name=subject_name,
                     namespace=None if kind != "ServiceAccount" else "default"
