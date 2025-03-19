@@ -205,7 +205,34 @@ class K8sClient:
                 return False
             raise e
 
-    @dry_run_guard()
+    def _role_body(
+            self,
+            name: str,
+            namespace: str,
+            rules: List[client.V1PolicyRule]) -> client.V1Role:
+        """
+        Create a Role body.
+
+        Args:
+            name: Name of the Role
+            namespace: Namespace to create the Role in
+            rules: List of PolicyRules for the Role
+
+        Returns:
+            The created V1Role body
+        """
+        role_body = client.V1Role(
+            api_version="rbac.authorization.k8s.io/v1",
+            kind="Role",
+            metadata=client.V1ObjectMeta(
+                name=name,
+                namespace=namespace),
+            rules=rules
+        )
+
+        return role_body
+
+    @dry_run_guard(_role_body)
     def upsert_custom_role(
             self,
             name: str,
@@ -222,14 +249,7 @@ class K8sClient:
         Returns:
             The created V1Role object
         """
-        role_body = client.V1Role(
-            api_version="rbac.authorization.k8s.io/v1",
-            kind="Role",
-            metadata=client.V1ObjectMeta(
-                name=name,
-                namespace=namespace),
-            rules=rules
-        )
+        role_body = self._role_body(name, namespace, rules)
 
         try:
             role_exits = self.check_role_exists(name=name, namespace=namespace)
@@ -245,7 +265,30 @@ class K8sClient:
 
         return role
 
-    @dry_run_guard()
+    def _cluster_role_body(
+            self,
+            name: str,
+            rules: List[client.V1PolicyRule]) -> client.V1Role:
+        """
+        Create a Cluster Role body.
+
+        Args:
+            name: Name of the Role
+            rules: List of PolicyRules for the Role
+
+        Returns:
+            The created V1Role body
+        """
+        role_body = client.V1Role(
+            api_version="rbac.authorization.k8s.io/v1",
+            kind="ClusterRole",
+            metadata=client.V1ObjectMeta(name=name),
+            rules=rules
+        )
+
+        return role_body
+
+    @dry_run_guard(_cluster_role_body)
     def upsert_custom_cluster_role(
             self,
             name: str,
@@ -260,12 +303,7 @@ class K8sClient:
         Returns:
             The created V1Role object
         """
-        role_body = client.V1Role(
-            api_version="rbac.authorization.k8s.io/v1",
-            kind="ClusterRole",
-            metadata=client.V1ObjectMeta(name=name),
-            rules=rules
-        )
+        role_body = self._cluster_role_body(name, rules)
 
         try:
             cluster_role_exits = self.check_cluster_role_exists(name=name)
@@ -282,8 +320,7 @@ class K8sClient:
 
         return cluster_role
 
-    @dry_run_guard()
-    def upsert_custom_rolebinding(
+    def _rolebinding_body(
             self,
             name: str,
             namespace: str,
@@ -291,7 +328,7 @@ class K8sClient:
             subject_name: str,
             kind: str = "User") -> client.V1RoleBinding:
         """
-        Update or Create a RoleBinding to assign a Role to a specific user.
+        Create a RoleBinding body.
 
         Args:
             name: Name of the RoleBinding
@@ -301,7 +338,7 @@ class K8sClient:
             kind: Subject kind (default: "User", can also be "Group" or "ServiceAccount")
 
         Returns:
-            The created/updated RoleBinding object
+            The created RoleBinding body
         """
         rolebinding_body = client.V1RoleBinding(
             api_version="rbac.authorization.k8s.io/v1",
@@ -323,6 +360,35 @@ class K8sClient:
                 )
             ]
         )
+        return rolebinding_body
+
+    @dry_run_guard(_rolebinding_body)
+    def upsert_custom_rolebinding(
+            self,
+            name: str,
+            namespace: str,
+            role_name: str,
+            subject_name: str,
+            kind: str = "User") -> client.V1RoleBinding:
+        """
+        Update or Create a RoleBinding to assign a Role to a specific user.
+
+        Args:
+            name: Name of the RoleBinding
+            namespace: Namespace where the RoleBinding will be created
+            role_name: Name of the Role to bind
+            subject_name: Name of the subject to bind the Role to
+            kind: Subject kind (default: "User", can also be "Group" or "ServiceAccount")
+
+        Returns:
+            The created/updated RoleBinding object
+        """
+        rolebinding_body = self._rolebinding_body(
+            name=name,
+            namespace=namespace,
+            role_name=role_name,
+            subject_name=subject_name,
+            kind=kind)
 
         try:
             role_binding_exits = self.check_role_binding_exists(name, namespace)
@@ -342,10 +408,86 @@ class K8sClient:
                 )
                 logging.info(f"Created RoleBinding {name} in namespace {namespace}")
         except ApiException as e:
-            logging.error(f"Error upserting RoleBinding {name} in namespace {namespace}: {e}")
+            logging.error(f"Failed to upsert RoleBinding {name} in namespace {namespace}: {e}")
             raise
 
         return rolebinding
+
+    def _cluster_rolebinding_body(
+            self,
+            name: str,
+            role_name: str,
+            subject_name: str,
+            kind: str = "User") -> client.V1ClusterRoleBinding:
+        """
+        Create a ClusterRoleBinding body.
+
+        Args:
+            name: Name of the ClusterRoleBinding
+            role_name: Name of the ClusterRole to bind
+            subject_name: Name of the subject to bind the ClusterRole to
+            kind: Subject kind (default: "User", can also be "Group" or "ServiceAccount")
+
+        Returns:
+            The created ClusterRoleBinding body
+        """
+        cluster_rolebinding_body = client.V1ClusterRoleBinding(
+            api_version="rbac.authorization.k8s.io/v1",
+            kind="ClusterRoleBinding",
+            metadata=client.V1ObjectMeta(
+                name=name
+            ),
+            role_ref=client.V1RoleRef(
+                api_group="rbac.authorization.k8s.io",
+                kind="ClusterRole",
+                name=role_name
+            ),
+            subjects=[
+                client.V1Subject(
+                    kind=kind,
+                    name=subject_name,
+                    namespace=None if kind != "ServiceAccount" else "default"
+                )
+            ]
+        )
+        return cluster_rolebinding_body
+
+    @dry_run_guard(_cluster_rolebinding_body)
+    def upsert_cluster_role_binding(
+            self,
+            name: str,
+            role_name: str,
+            subject_name: str,
+            kind: str = "User") -> client.V1ClusterRoleBinding:
+        """
+        Update or Create a ClusterRoleBinding for a subject.
+
+        Args:
+            name: Name of the ClusterRoleBinding
+            role_name: Name of the ClusterRole to bind
+            subject_name: Name of the subject to bind the ClusterRole to
+            kind: Subject kind (default: "User", can also be "Group" or "ServiceAccount")
+
+        Returns:
+            The created or updated V1ClusterRoleBinding object
+        """
+        cluster_rolebinding_body = self._cluster_rolebinding_body(name, role_name, subject_name, kind)
+
+        try:
+            cluster_role_binding_exists = self.check_cluster_role_binding_exists(name=name)
+
+            if cluster_role_binding_exists:
+                # Update the existing Cluster Role Binding
+                crb = self.rbac_v1.replace_cluster_role_binding(name=name, body=cluster_rolebinding_body)
+                logging.info(f"Updated ClusterRoleBinding {name}.")
+            else:
+                crb = self.rbac_v1.create_cluster_role_binding(body=cluster_rolebinding_body)
+                logging.info(f"Created ClusterRoleBinding {name}.")
+
+            return crb
+        except ApiException as e:
+            logging.error(f"Failed to upsert ClusterRoleBinding {name}: {e}")
+            raise e
 
 
 @click.command()
