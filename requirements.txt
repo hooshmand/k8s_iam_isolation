@@ -1,0 +1,5 @@
+click
+boto3
+kubernetes
+pyyaml
+inquirer
