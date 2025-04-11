@@ -5,13 +5,12 @@ from botocore.exceptions import ClientError
 from k8s_iam_isolation.main import cli
 
 
-iam_client = boto3.client("iam")
-account_id = boto3.client("sts").get_caller_identity().get("Account")
-
-
-def list_iam_users():
+def list_iam_users(iam_client):
     """
     Get a list of all IAM users in the AWS account using pagination.
+
+    Args:
+        iam_client: An initialized boto3 IAM client.
 
     Returns:
         list: List of IAM user dictionaries
@@ -35,9 +34,12 @@ def list_iam_users():
         return []
 
 
-def list_iam_groups():
+def list_iam_groups(iam_client):
     """
     Get a list of all IAM groups in the AWS account using pagination.
+
+    Args:
+        iam_client: An initialized boto3 IAM client.
 
     Returns:
         list: List of IAM group dictionaries
@@ -61,9 +63,12 @@ def list_iam_groups():
         return []
 
 
-def list_iam_roles():
+def list_iam_roles(iam_client):
     """
     Get a list of all IAM roles in the AWS account using pagination.
+
+    Args:
+        iam_client: An initialized boto3 IAM client.
 
     Returns:
         list: List of IAM role dictionaries
@@ -89,10 +94,13 @@ def list_iam_roles():
 
 @click.command()
 def list_entities():
+
+    iam_client = boto3.client("iam")
+
     """List all IAM users, groups, and roles."""
-    users = list_iam_users()
-    groups = list_iam_groups()
-    roles = list_iam_roles()
+    users = list_iam_users(iam_client)
+    groups = list_iam_groups(iam_client)
+    roles = list_iam_roles(iam_client)
 
     click.echo("\n👤 IAM Users:")
     for user in users:
