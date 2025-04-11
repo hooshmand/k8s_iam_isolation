@@ -1,6 +1,7 @@
 import boto3
 import click
 import logging
+from botocore.exceptions import ClientError
 from k8s_iam_isolation.main import cli
 
 
@@ -25,8 +26,12 @@ def list_iam_users():
         for page in page_iterator:
             all_users.extend(page['Users'])
         return [{"name": user["UserName"], "arn": user["Arn"]} for user in all_users]
+    except ClientError as e:
+        error_code = e.response.get('Error', {}).get('Code')
+        logging.error(f"AWS API error listing IAM users (Code: {error_code}): {e}")
+        return []
     except Exception as e:
-        logging.error(f"Failed to list IAM users: {e}")
+        logging.error(f"An unexpected error occurred listing IAM users: {e}")
         return []
 
 
@@ -47,8 +52,12 @@ def list_iam_groups():
         for page in page_iterator:
             all_groups.extend(page['Groups'])
         return [{"name": group["GroupName"], "arn": group["Arn"]} for group in all_groups]
+    except ClientError as e:
+        error_code = e.response.get('Error', {}).get('Code')
+        logging.error(f"AWS API error listing IAM users (Code: {error_code}): {e}")
+        return []
     except Exception as e:
-        logging.error(f"Failed to list IAM groups: {e}")
+        logging.error(f"An unexpected error occurred listing IAM groups: {e}")
         return []
 
 
@@ -69,8 +78,12 @@ def list_iam_roles():
         for page in page_iterator:
             all_roles.extend(page['Roles'])
         return [{"name": role["RoleName"], "arn": role["Arn"]} for role in all_roles]
+    except ClientError as e:
+        error_code = e.response.get('Error', {}).get('Code')
+        logging.error(f"AWS API error listing IAM users (Code: {error_code}): {e}")
+        return []
     except Exception as e:
-        logging.error(f"Failed to list IAM roles: {e}")
+        logging.error(f"An unexpected error occurred listing IAM users: {e}")
         return []
 
 
