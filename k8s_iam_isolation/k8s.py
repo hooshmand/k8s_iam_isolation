@@ -269,18 +269,17 @@ class K8sClient:
         role_body = self._role_body(name, namespace, rules)
 
         try:
-            role_exits = self.check_role_exists(name=name, namespace=namespace)
+            role_exists = self.check_role_exists(name=name, namespace=namespace)
 
-            if role_exits:
+            if role_exists:
                 role = self.rbac_v1.replace_namespaced_role(name=name, namespace=namespace, body=role_body)
                 logging.info(f"Updated Role {name} in namespace {namespace}")
             else:
                 role = self.rbac_v1.create_namespaced_role(namespace=namespace, body=role_body)
                 logging.info(f"Created Role {name} in namespace {namespace}")
+            return role
         except ApiException as e:
             raise e
-
-        return role
 
     def _cluster_role_body(
             self,
@@ -323,19 +322,19 @@ class K8sClient:
         role_body = self._cluster_role_body(name, rules)
 
         try:
-            cluster_role_exits = self.check_cluster_role_exists(name=name)
+            cluster_role_exists = self.check_cluster_role_exists(name=name)
 
-            if cluster_role_exits:
+            if cluster_role_exists:
                 cluster_role = self.rbac_v1.replace_cluster_role(name=name, body=role_body)
                 logging.info(f"Updated Cluster Role {name}.")
             else:
-                created_cluster_role = self.rbac_v1.create_cluster_role(body=role_body)
+                cluster_role = self.rbac_v1.create_cluster_role(body=role_body)
                 logging.info(f"Created Cluster Role {name}.")
 
+            return cluster_role
         except ApiException as e:
+            logging.error(f"Failed to upsert Cluster Role {name}: {e}")
             raise e
-
-        return cluster_role
 
     def _rolebinding_body(
             self,
