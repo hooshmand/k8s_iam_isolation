@@ -56,7 +56,7 @@ def list_iam_groups(iam_client):
         return [{"name": group["GroupName"], "arn": group["Arn"]} for group in all_groups]
     except ClientError as e:
         error_code = e.response.get('Error', {}).get('Code')
-        logging.error(f"AWS API error listing IAM users (Code: {error_code}): {e}")
+        logging.error(f"AWS API error listing IAM groups (Code: {error_code}): {e}")
         return []
     except Exception as e:
         logging.error(f"An unexpected error occurred listing IAM groups: {e}")
@@ -85,10 +85,10 @@ def list_iam_roles(iam_client):
         return [{"name": role["RoleName"], "arn": role["Arn"]} for role in all_roles]
     except ClientError as e:
         error_code = e.response.get('Error', {}).get('Code')
-        logging.error(f"AWS API error listing IAM users (Code: {error_code}): {e}")
+        logging.error(f"AWS API error listing IAM roles (Code: {error_code}): {e}")
         return []
     except Exception as e:
-        logging.error(f"An unexpected error occurred listing IAM users: {e}")
+        logging.error(f"An unexpected error occurred listing IAM roles: {e}")
         return []
 
 
