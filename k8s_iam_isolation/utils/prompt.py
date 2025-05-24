@@ -1,6 +1,10 @@
 from dataclasses import field, fields, MISSING
 from typing import Any, Callable, List, Optional, Union, Dict
 from InquirerPy import inquirer
+import logging
+
+
+logger = logging.getLogger("k8s_isolation")
 
 
 def PromptField(prompt_type: str,
