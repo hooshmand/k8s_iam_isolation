@@ -16,6 +16,9 @@ from functools import wraps
 from typing import Dict, List
 
 
+logger = logging.getLogger("k8s_isolation")
+
+
 def _k8s_contexts():
     """Fetch the Kubernetes contexts from the kubeconfig"""
     context_choices = []
@@ -52,7 +55,7 @@ def dry_run_guard(mock_response=None):
         @wraps(method)
         def wrapper(self, *args, **kwargs):
             if self.dry_run:
-                logging.info(f"[Dry-Run] {method.__name__} called with args={args}, kwargs={kwargs}.")
+                logger.info(f"[Dry-Run] {method.__name__} called with args={args}, kwargs={kwargs}.")
 
                 # Check if a mock function is provided, else check if `default_mock_response` exists
                 if callable(mock_response):
@@ -112,10 +115,10 @@ class K8sClient:
             return aws_auth_cm
         except ApiException as e:
             if e.status == 404:
-                logging.warning("aws-auth ConfigMap not found. Create a new one.")
+                logger.warning("aws-auth ConfigMap not found. Create a new one.")
                 return None
             else:
-                logging.error(f"Failed to read aws-auth ConfigMap: {e}")
+                logger.error(f"Failed to read aws-auth ConfigMap: {e}")
                 raise e
 
     def _create_aws_auth(self, users: List[Dict]=[], roles: List[Dict]=[]):
@@ -140,7 +143,7 @@ class K8sClient:
             )
             return aws_auth_cm
         except ApiException as e:
-            logging.error(f"Failed to create aws-auth ConfigMap: {e}")
+            logger.error(f"Failed to create aws-auth ConfigMap: {e}")
             raise e
 
     @dry_run_guard()
@@ -149,7 +152,7 @@ class K8sClient:
         action = "Removing" if remove else "Adding"
 
         if self.dry_run:
-            logging.info(f"📝 [Dry Run] {action} {entity_type} '{entity.get("name")}' to aws-auth ConfigMap.")
+            logger.info(f"📝 [Dry Run] {action} {entity_type} '{entity.get("name")}' to aws-auth ConfigMap.")
             return
 
         try:
@@ -170,17 +173,17 @@ class K8sClient:
 
             if remove:
                 existing_entries = [entry for entry in existing_entries if entry.get("userarn", entry.get("rolearn")) != new_entry.get("userarn", new_entry.get("rolearn"))]
-                logging.info(f"✅ Removed {entity_type} '{entity.get("name")}' from aws-auth ConfigMap.")
+                logger.info(f"✅ Removed {entity_type} '{entity.get("name")}' from aws-auth ConfigMap.")
             else:
                 if new_entry not in existing_entries:
                     existing_entries.append(new_entry)
-                    logging.info(f"✅ Added {entity_type} '{entity.get("name")}' to aws-auth ConfigMap.")
+                    logger.info(f"✅ Added {entity_type} '{entity.get("name")}' to aws-auth ConfigMap.")
 
             aws_auth_cm.data[map_key] = yaml.dump(existing_entries)
             self.core_v1.patch_namespaced_config_map(name="aws-auth", namespace="kube-system", body=aws_auth_cm)
 
         except Exception as e:
-            logging.error(f"Failed to update aws-auth ConfigMap: {e}")
+            logger.error(f"Failed to update aws-auth ConfigMap: {e}")
 
     def check_role_exists(self, name: str, namespace: str):
         """Check if a Role exists in the specified namespace."""
@@ -273,10 +276,10 @@ class K8sClient:
 
             if role_exists:
                 role = self.rbac_v1.replace_namespaced_role(name=name, namespace=namespace, body=role_body)
-                logging.info(f"Updated Role {name} in namespace {namespace}")
+                logger.info(f"Updated Role {name} in namespace {namespace}")
             else:
                 role = self.rbac_v1.create_namespaced_role(namespace=namespace, body=role_body)
-                logging.info(f"Created Role {name} in namespace {namespace}")
+                logger.info(f"Created Role {name} in namespace {namespace}")
             return role
         except ApiException as e:
             raise e
@@ -326,14 +329,14 @@ class K8sClient:
 
             if cluster_role_exists:
                 cluster_role = self.rbac_v1.replace_cluster_role(name=name, body=role_body)
-                logging.info(f"Updated Cluster Role {name}.")
+                logger.info(f"Updated Cluster Role {name}.")
             else:
                 cluster_role = self.rbac_v1.create_cluster_role(body=role_body)
-                logging.info(f"Created Cluster Role {name}.")
+                logger.info(f"Created Cluster Role {name}.")
 
             return cluster_role
         except ApiException as e:
-            logging.error(f"Failed to upsert Cluster Role {name}: {e}")
+            logger.error(f"Failed to upsert Cluster Role {name}: {e}")
             raise e
 
     def _rolebinding_body(
@@ -415,16 +418,16 @@ class K8sClient:
                     namespace=namespace,
                     body=rolebinding_body
                 )
-                logging.info(f"Updated RoleBinding {name} in namespace {namespace}")
+                logger.info(f"Updated RoleBinding {name} in namespace {namespace}")
             else:
                 # Create a new Role Binding
                 rolebinding = self.rbac_v1.create_namespaced_role_binding(
                     namespace=namespace,
                     body=rolebinding_body
                 )
-                logging.info(f"Created RoleBinding {name} in namespace {namespace}")
+                logger.info(f"Created RoleBinding {name} in namespace {namespace}")
         except ApiException as e:
-            logging.error(f"Failed to upsert RoleBinding {name} in namespace {namespace}: {e}")
+            logger.error(f"Failed to upsert RoleBinding {name} in namespace {namespace}: {e}")
             raise
 
         return rolebinding
@@ -495,14 +498,14 @@ class K8sClient:
             if cluster_role_binding_exists:
                 # Update the existing Cluster Role Binding
                 crb = self.rbac_v1.replace_cluster_role_binding(name=name, body=cluster_rolebinding_body)
-                logging.info(f"Updated ClusterRoleBinding {name}.")
+                logger.info(f"Updated ClusterRoleBinding {name}.")
             else:
                 crb = self.rbac_v1.create_cluster_role_binding(body=cluster_rolebinding_body)
-                logging.info(f"Created ClusterRoleBinding {name}.")
+                logger.info(f"Created ClusterRoleBinding {name}.")
 
             return crb
         except ApiException as e:
-            logging.error(f"Failed to upsert ClusterRoleBinding {name}: {e}")
+            logger.error(f"Failed to upsert ClusterRoleBinding {name}: {e}")
             raise e
 
 
@@ -519,7 +522,12 @@ def create(_obj: dict, entity_type, dry_run):
     vars = prompt_factory(K8sClient)
     k8c = K8sClient(predefined_rules=predefined_rules, dry_run=dry_run, **vars)
 
-    entities = list_iam_users() if entity_type == "user" else list_iam_roles()
+    try:
+        entities = list_iam_users() if entity_type == "user" else list_iam_roles()
+    except Exception as e:
+        logger.error(f"Could not list the entities: {e}")
+        raise e
+
     entity = inquirer.fuzzy(
         message="Select IAM User/Role:",
         choices=[Choice(name=entity.get("name"), value=entity) for entity in entities],

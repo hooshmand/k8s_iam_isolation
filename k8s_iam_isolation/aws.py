@@ -3,7 +3,10 @@ import click
 import logging
 from botocore.exceptions import ClientError
 from k8s_iam_isolation.main import cli
+import logging
 
+
+logger = logging.getLogger("k8s_isolation")
 
 def list_iam_users(iam_client):
     """
@@ -27,10 +30,10 @@ def list_iam_users(iam_client):
         return [{"name": user["UserName"], "arn": user["Arn"]} for user in all_users]
     except ClientError as e:
         error_code = e.response.get('Error', {}).get('Code')
-        logging.error(f"AWS API error listing IAM users (Code: {error_code}): {e}")
+        logger.error(f"AWS API error listing IAM users (Code: {error_code}): {e}")
         return []
     except Exception as e:
-        logging.error(f"An unexpected error occurred listing IAM users: {e}")
+        logger.error(f"An unexpected error occurred listing IAM users: {e}")
         return []
 
 
@@ -56,10 +59,10 @@ def list_iam_groups(iam_client):
         return [{"name": group["GroupName"], "arn": group["Arn"]} for group in all_groups]
     except ClientError as e:
         error_code = e.response.get('Error', {}).get('Code')
-        logging.error(f"AWS API error listing IAM groups (Code: {error_code}): {e}")
+        logger.error(f"AWS API error listing IAM groups (Code: {error_code}): {e}")
         return []
     except Exception as e:
-        logging.error(f"An unexpected error occurred listing IAM groups: {e}")
+        logger.error(f"An unexpected error occurred listing IAM groups: {e}")
         return []
 
 
@@ -85,10 +88,10 @@ def list_iam_roles(iam_client):
         return [{"name": role["RoleName"], "arn": role["Arn"]} for role in all_roles]
     except ClientError as e:
         error_code = e.response.get('Error', {}).get('Code')
-        logging.error(f"AWS API error listing IAM roles (Code: {error_code}): {e}")
+        logger.error(f"AWS API error listing IAM roles (Code: {error_code}): {e}")
         return []
     except Exception as e:
-        logging.error(f"An unexpected error occurred listing IAM roles: {e}")
+        logger.error(f"An unexpected error occurred listing IAM roles: {e}")
         return []
 
 

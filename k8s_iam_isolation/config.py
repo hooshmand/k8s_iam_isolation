@@ -6,9 +6,9 @@ from typing import Any
 
 CONFIG_DIR = Path.home() / ".config" / "k8s_iam_isolation"
 CONFIG_FILE = CONFIG_DIR / "config.yaml"
+DEFAULT_LOG_CONFIG = Path(__file__).parent / "custom_logging" / "config.json"
 DEFAULTS = {
-    "log_level": "INFO",
-    "log_file": "/var/logs/k8s_iam_isolation/loaudit.log"
+    "log_config": str(DEFAULT_LOG_CONFIG),
 }
 
 def get_config(config_path: Path = CONFIG_FILE):
