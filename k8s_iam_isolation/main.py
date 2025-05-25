@@ -1,8 +1,9 @@
-import click
-from k8s_iam_isolation.config import get_config, save_config
-from k8s_iam_isolation.custom_logging.logger import setup_logging
 import logging
 
+import click
+
+from k8s_iam_isolation.config import get_config, save_config
+from k8s_iam_isolation.custom_logging.logger import setup_logging
 
 logger = logging.getLogger("k8s_isolation")
 
@@ -50,4 +51,4 @@ def update(ctx: click.Context, log_config):
     ctx.obj["config"]["log_config"] = log_config
 
     save_config(ctx.obj["config"])
-    click.echo(f"Config file updated.")
+    click.echo("Config file updated.")
