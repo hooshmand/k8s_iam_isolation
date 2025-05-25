@@ -33,11 +33,9 @@ LOG_RECORD_BUILTIN_ATTRS = {
 
 
 def setup_logging(log_config: str):
-    logging.basicConfig()
     config_file = pathlib.Path(log_config)
     with open(config_file) as f_in:
         config = json.load(f_in)
-    # print(config)
     logging.config.dictConfig(config)
     # queue_handler = logging.getHandlerByName("queue_handler")
     # if queue_handler is not None:
@@ -60,7 +58,6 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(message, default=str)
 
     def _prepare_log_dict(self, record: logging.LogRecord):
-        print(f"got the records: {record}")
         always_fields = {
             "message": record.getMessage(),
             "timestamp": dt.datetime.fromtimestamp(
