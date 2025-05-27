@@ -1,5 +1,7 @@
 # k8s_iam_isolation
 
+⚠️ Alpha version: This project is in early development and should not be used in production environments.
+
 A CLI tool to restrict AWS IAM users and roles to specific Kubernetes namespaces by managing entries in the `aws-auth` ConfigMap and creating corresponding RBAC Roles and RoleBindings.
 
 ## Prerequisites
