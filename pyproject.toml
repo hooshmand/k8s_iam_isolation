@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "k8s-iam-isolation"
-version = "0.1.0"
+version = "0.1.1"
 description = "A CLI tool to restrict AWS IAM users, groups, and roles to Kubernetes namespaces"
 authors = [
-  { name = "Your Name", email = "your.email@example.com" }
+  { name = "Hooshmand k", email = "hooshmand.k@gmail.com" }
   ]
-license = { text = "MIT" }
+license = { text = "GNU GPL v3" }
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
@@ -20,13 +20,17 @@ dependencies = [
     "click",
     "boto3",
     "kubernetes",
-    "pyyaml"
+    "pyyaml",
+    "inquirer"
 ]
 
 [project.scripts]
-k8s-iam = "namespace_cli:cli"
+k8s-iam = "k8s_iam_isolation:main"
 
 
 [project.urls]
 Homepage = "https://github.com/hooshmand/k8s-iam-isolation"
 Issues = "https://github.com/hooshmand/k8s-iam-isolation/issues"
+
+[tool.setuptools]
+packages = ["k8s_iam_isolation"]
