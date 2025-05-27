@@ -1,20 +1,19 @@
-
-import click
-import yaml
 import logging
 import os
 from dataclasses import dataclass, field
+from functools import wraps
+
+import click
+import yaml
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 from InquirerPy.validator import EmptyInputValidator
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
-from k8s_iam_isolation.main import cli
-from k8s_iam_isolation.aws import list_iam_users, list_iam_roles
-from k8s_iam_isolation.utils.prompt import PromptField, prompt_factory
-from functools import wraps
-from typing import Dict, List
 
+from k8s_iam_isolation.aws import list_iam_roles, list_iam_users
+from k8s_iam_isolation.main import cli
+from k8s_iam_isolation.utils.prompt import PromptField, prompt_factory
 
 logger = logging.getLogger("k8s_isolation")
 
@@ -27,23 +26,25 @@ def _k8s_contexts():
     return context_choices
 
 
-def _default_predefined_rules() -> Dict:
+def _default_predefined_rules() -> dict:
     """Load the default predefined rules from a yaml file."""
 
-    with open(os.path.join(os.path.dirname(__file__), 'predefined_rbac_rules.yaml'), "r") as file:
+    with open(
+        os.path.join(os.path.dirname(__file__), "predefined_rbac_rules.yaml")
+    ) as file:
         predefined_rbac_rules = yaml.safe_load(file)
     return predefined_rbac_rules.get("predefined_rules")
 
 
-def _get_policy_rules(rule_config: List) -> List:
+def _get_policy_rules(rule_config: list) -> list:
     # Convert the configuration to V1PolicyRule objects
     policy_rules = []
     for rule in rule_config:
         policy_rule = client.V1PolicyRule(
-            api_groups=rule.get('apiGroups', []),
-            resources=rule.get('resources', []),
-            verbs=rule.get('verbs', []),
-            resource_names=rule.get('resourceNames', None)
+            api_groups=rule.get("apiGroups", []),
+            resources=rule.get("resources", []),
+            verbs=rule.get("verbs", []),
+            resource_names=rule.get("resourceNames"),
         )
         policy_rules.append(policy_rule)
     return policy_rules
@@ -51,35 +52,44 @@ def _get_policy_rules(rule_config: List) -> List:
 
 def dry_run_guard(mock_response=None):
     """Decorator that enables dry-run behavior with dynamic mock responses."""
+
     def decorator(method):
         @wraps(method)
         def wrapper(self, *args, **kwargs):
             if self.dry_run:
-                logger.info(f"[Dry-Run] {method.__name__} called with args={args}, kwargs={kwargs}.")
+                logger.info(
+                    f"[Dry-Run] {method.__name__} called with args={args}, kwargs={kwargs}."
+                )
 
                 # Check if a mock function is provided, else check if `default_mock_response` exists
                 if callable(mock_response):
                     response = mock_response(self, *args, **kwargs)
-                elif hasattr(self, "_default_mock_response") and callable(getattr(self, "_default_mock_response")):
-                    response = self._default_mock_response(method, *args, **kwargs)
+                elif hasattr(self, "_default_mock_response") and callable(
+                    self._default_mock_response
+                ):
+                    response = self._default_mock_response(
+                        method, *args, **kwargs
+                    )
                 else:
                     response = None
 
                 return response
 
             return method(self, *args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
 @dataclass
 class K8sClient:
-    context: Dict = PromptField(
+    context: dict = PromptField(
         prompt_type="select",
         message="Choose the correct context:",
-        choices=_k8s_contexts
+        choices=_k8s_contexts,
     )
-    predefined_rules: Dict
+    predefined_rules: dict
     dry_run: bool = field(default=False)
     # Optional client args - default to None
     core_v1: client.CoreV1Api = None
@@ -91,9 +101,9 @@ class K8sClient:
     storage_v1: client.StorageV1Api = None
 
     def __post_init__(self, **kwargs):
-        if not hasattr(self, '_kube_config_loaded'):
-                config.load_kube_config(context=self.context)
-                self._kube_config_loaded = True
+        if not hasattr(self, "_kube_config_loaded"):
+            config.load_kube_config(context=self.context)
+            self._kube_config_loaded = True
         if self.core_v1 is None:
             self.core_v1 = client.CoreV1Api()
         if self.apps_v1 is None:
@@ -111,35 +121,43 @@ class K8sClient:
 
     def _read_aws_auth(self):
         try:
-            aws_auth_cm = self.core_v1.read_namespaced_config_map("aws-auth", "kube-system")
+            aws_auth_cm = self.core_v1.read_namespaced_config_map(
+                "aws-auth", "kube-system"
+            )
             return aws_auth_cm
         except ApiException as e:
             if e.status == 404:
-                logger.warning("aws-auth ConfigMap not found. Create a new one.")
+                logger.warning(
+                    "aws-auth ConfigMap not found. Create a new one."
+                )
                 return None
             else:
                 logger.error(f"Failed to read aws-auth ConfigMap: {e}")
                 raise e
 
-    def _create_aws_auth(self, users: List[Dict]=[], roles: List[Dict]=[]):
+    def _create_aws_auth(self, users=None, roles=None):
+        if users is None:
+            users = []
+        if roles is None:
+            roles = []
+
         try:
             body = client.V1ConfigMap(
                 api_version="v1",
                 kind="ConfigMap",
                 metadata=client.V1ObjectMeta(
-                    name="aws-auth",
-                    namespace="kube-system"),
-                data={}
+                    name="aws-auth", namespace="kube-system"
+                ),
+                data={},
             )
 
             body.data = {
                 "mapRoles": yaml.dump(roles),
-                "mapUsers": yaml.dump(users)
+                "mapUsers": yaml.dump(users),
             }
 
             aws_auth_cm = self.core_v1.create_namespaced_config_map(
-                namespace="kube-system",
-                body=body
+                namespace="kube-system", body=body
             )
             return aws_auth_cm
         except ApiException as e:
@@ -152,7 +170,9 @@ class K8sClient:
         action = "Removing" if remove else "Adding"
 
         if self.dry_run:
-            logger.info(f"📝 [Dry Run] {action} {entity_type} '{entity.get("name")}' to aws-auth ConfigMap.")
+            logger.info(
+                f"📝 [Dry Run] {action} {entity_type} '{entity.get("name")}' to aws-auth ConfigMap."
+            )
             return
 
         try:
@@ -164,23 +184,38 @@ class K8sClient:
             map_key = "mapUsers" if entity_type == "user" else "mapRoles"
 
             new_entry = {
-                "userarn" if entity_type != "role" else "rolearn": f"{entity.get("arn")}",
+                (
+                    "userarn" if entity_type != "role" else "rolearn"
+                ): f"{entity.get("arn")}",
                 "username": entity.get("name"),
-                "groups": ["system:authenticated"]
+                "groups": ["system:authenticated"],
             }
 
-            existing_entries = yaml.safe_load(aws_auth_cm.data.get(map_key, "[]"))
+            existing_entries = yaml.safe_load(
+                aws_auth_cm.data.get(map_key, "[]")
+            )
 
             if remove:
-                existing_entries = [entry for entry in existing_entries if entry.get("userarn", entry.get("rolearn")) != new_entry.get("userarn", new_entry.get("rolearn"))]
-                logger.info(f"✅ Removed {entity_type} '{entity.get("name")}' from aws-auth ConfigMap.")
+                existing_entries = [
+                    entry
+                    for entry in existing_entries
+                    if entry.get("userarn", entry.get("rolearn"))
+                    != new_entry.get("userarn", new_entry.get("rolearn"))
+                ]
+                logger.info(
+                    f"✅ Removed {entity_type} '{entity.get("name")}' from aws-auth ConfigMap."
+                )
             else:
                 if new_entry not in existing_entries:
                     existing_entries.append(new_entry)
-                    logger.info(f"✅ Added {entity_type} '{entity.get("name")}' to aws-auth ConfigMap.")
+                    logger.info(
+                        f"✅ Added {entity_type} '{entity.get("name")}' to aws-auth ConfigMap."
+                    )
 
             aws_auth_cm.data[map_key] = yaml.dump(existing_entries)
-            self.core_v1.patch_namespaced_config_map(name="aws-auth", namespace="kube-system", body=aws_auth_cm)
+            self.core_v1.patch_namespaced_config_map(
+                name="aws-auth", namespace="kube-system", body=aws_auth_cm
+            )
 
         except Exception as e:
             logger.error(f"Failed to update aws-auth ConfigMap: {e}")
@@ -208,7 +243,9 @@ class K8sClient:
     def check_role_binding_exists(self, name: str, namespace: str):
         """Check if a RoleBinding exists in the specified namespace."""
         try:
-            self.rbac_v1.read_namespaced_role_binding(name=name, namespace=namespace)
+            self.rbac_v1.read_namespaced_role_binding(
+                name=name, namespace=namespace
+            )
             return True
         except ApiException as e:
             if e.status == 404:
@@ -226,10 +263,8 @@ class K8sClient:
             raise e
 
     def _role_body(
-            self,
-            name: str,
-            namespace: str,
-            rules: List[client.V1PolicyRule]) -> client.V1Role:
+        self, name: str, namespace: str, rules: list[client.V1PolicyRule]
+    ) -> client.V1Role:
         """
         Create a Role body.
 
@@ -244,20 +279,16 @@ class K8sClient:
         role_body = client.V1Role(
             api_version="rbac.authorization.k8s.io/v1",
             kind="Role",
-            metadata=client.V1ObjectMeta(
-                name=name,
-                namespace=namespace),
-            rules=rules
+            metadata=client.V1ObjectMeta(name=name, namespace=namespace),
+            rules=rules,
         )
 
         return role_body
 
     @dry_run_guard(_role_body)
     def upsert_custom_role(
-            self,
-            name: str,
-            namespace: str,
-            rules: List[client.V1PolicyRule]) -> client.V1Role:
+        self, name: str, namespace: str, rules: list[client.V1PolicyRule]
+    ) -> client.V1Role:
         """
         Update or Create a custom Role with specific permissions in a namespace.
 
@@ -272,22 +303,27 @@ class K8sClient:
         role_body = self._role_body(name, namespace, rules)
 
         try:
-            role_exists = self.check_role_exists(name=name, namespace=namespace)
+            role_exists = self.check_role_exists(
+                name=name, namespace=namespace
+            )
 
             if role_exists:
-                role = self.rbac_v1.replace_namespaced_role(name=name, namespace=namespace, body=role_body)
+                role = self.rbac_v1.replace_namespaced_role(
+                    name=name, namespace=namespace, body=role_body
+                )
                 logger.info(f"Updated Role {name} in namespace {namespace}")
             else:
-                role = self.rbac_v1.create_namespaced_role(namespace=namespace, body=role_body)
+                role = self.rbac_v1.create_namespaced_role(
+                    namespace=namespace, body=role_body
+                )
                 logger.info(f"Created Role {name} in namespace {namespace}")
             return role
         except ApiException as e:
             raise e
 
     def _cluster_role_body(
-            self,
-            name: str,
-            rules: List[client.V1PolicyRule]) -> client.V1Role:
+        self, name: str, rules: list[client.V1PolicyRule]
+    ) -> client.V1Role:
         """
         Create a Cluster Role body.
 
@@ -302,16 +338,15 @@ class K8sClient:
             api_version="rbac.authorization.k8s.io/v1",
             kind="ClusterRole",
             metadata=client.V1ObjectMeta(name=name),
-            rules=rules
+            rules=rules,
         )
 
         return role_body
 
     @dry_run_guard(_cluster_role_body)
     def upsert_custom_cluster_role(
-            self,
-            name: str,
-            rules: List[client.V1PolicyRule]) -> client.V1Role:
+        self, name: str, rules: list[client.V1PolicyRule]
+    ) -> client.V1Role:
         """
         Update or Create a custom Cluster Role with specific permissions.
 
@@ -328,7 +363,9 @@ class K8sClient:
             cluster_role_exists = self.check_cluster_role_exists(name=name)
 
             if cluster_role_exists:
-                cluster_role = self.rbac_v1.replace_cluster_role(name=name, body=role_body)
+                cluster_role = self.rbac_v1.replace_cluster_role(
+                    name=name, body=role_body
+                )
                 logger.info(f"Updated Cluster Role {name}.")
             else:
                 cluster_role = self.rbac_v1.create_cluster_role(body=role_body)
@@ -340,12 +377,13 @@ class K8sClient:
             raise e
 
     def _rolebinding_body(
-            self,
-            name: str,
-            namespace: str,
-            role_name: str,
-            subject_name: str,
-            kind: str = "User") -> client.V1RoleBinding:
+        self,
+        name: str,
+        namespace: str,
+        role_name: str,
+        subject_name: str,
+        kind: str = "User",
+    ) -> client.V1RoleBinding:
         """
         Create a RoleBinding body.
 
@@ -362,33 +400,31 @@ class K8sClient:
         rolebinding_body = client.V1RoleBinding(
             api_version="rbac.authorization.k8s.io/v1",
             kind="RoleBinding",
-            metadata=client.V1ObjectMeta(
-                name=name,
-                namespace=namespace
-            ),
+            metadata=client.V1ObjectMeta(name=name, namespace=namespace),
             role_ref=client.V1RoleRef(
                 api_group="rbac.authorization.k8s.io",
                 kind="Role",
-                name=role_name
+                name=role_name,
             ),
             subjects=[
                 client.RbacV1Subject(
                     kind=kind,
                     name=subject_name,
-                    namespace=namespace if kind == "ServiceAccount" else None
+                    namespace=namespace if kind == "ServiceAccount" else None,
                 )
-            ]
+            ],
         )
         return rolebinding_body
 
     @dry_run_guard(_rolebinding_body)
     def upsert_custom_rolebinding(
-            self,
-            name: str,
-            namespace: str,
-            role_name: str,
-            subject_name: str,
-            kind: str = "User") -> client.V1RoleBinding:
+        self,
+        name: str,
+        namespace: str,
+        role_name: str,
+        subject_name: str,
+        kind: str = "User",
+    ) -> client.V1RoleBinding:
         """
         Update or Create a RoleBinding to assign a Role to a specific user.
 
@@ -407,37 +443,40 @@ class K8sClient:
             namespace=namespace,
             role_name=role_name,
             subject_name=subject_name,
-            kind=kind)
+            kind=kind,
+        )
 
         try:
-            role_binding_exits = self.check_role_binding_exists(name, namespace)
+            role_binding_exits = self.check_role_binding_exists(
+                name, namespace
+            )
             if role_binding_exits:
                 # Update the existing Role Binding
                 rolebinding = self.rbac_v1.replace_namespaced_role_binding(
-                    name=name,
-                    namespace=namespace,
-                    body=rolebinding_body
+                    name=name, namespace=namespace, body=rolebinding_body
                 )
-                logger.info(f"Updated RoleBinding {name} in namespace {namespace}")
+                logger.info(
+                    f"Updated RoleBinding {name} in namespace {namespace}"
+                )
             else:
                 # Create a new Role Binding
                 rolebinding = self.rbac_v1.create_namespaced_role_binding(
-                    namespace=namespace,
-                    body=rolebinding_body
+                    namespace=namespace, body=rolebinding_body
                 )
-                logger.info(f"Created RoleBinding {name} in namespace {namespace}")
+                logger.info(
+                    f"Created RoleBinding {name} in namespace {namespace}"
+                )
         except ApiException as e:
-            logger.error(f"Failed to upsert RoleBinding {name} in namespace {namespace}: {e}")
+            logger.error(
+                f"Failed to upsert RoleBinding {name} in namespace {namespace}: {e}"
+            )
             raise
 
         return rolebinding
 
     def _cluster_rolebinding_body(
-            self,
-            name: str,
-            role_name: str,
-            subject_name: str,
-            kind: str = "User") -> client.V1ClusterRoleBinding:
+        self, name: str, role_name: str, subject_name: str, kind: str = "User"
+    ) -> client.V1ClusterRoleBinding:
         """
         Create a ClusterRoleBinding body.
 
@@ -453,31 +492,26 @@ class K8sClient:
         cluster_rolebinding_body = client.V1ClusterRoleBinding(
             api_version="rbac.authorization.k8s.io/v1",
             kind="ClusterRoleBinding",
-            metadata=client.V1ObjectMeta(
-                name=name
-            ),
+            metadata=client.V1ObjectMeta(name=name),
             role_ref=client.V1RoleRef(
                 api_group="rbac.authorization.k8s.io",
                 kind="ClusterRole",
-                name=role_name
+                name=role_name,
             ),
             subjects=[
                 client.RbacV1Subject(
                     kind=kind,
                     name=subject_name,
-                    namespace=None if kind != "ServiceAccount" else "default"
+                    namespace=None if kind != "ServiceAccount" else "default",
                 )
-            ]
+            ],
         )
         return cluster_rolebinding_body
 
     @dry_run_guard(_cluster_rolebinding_body)
     def upsert_cluster_role_binding(
-            self,
-            name: str,
-            role_name: str,
-            subject_name: str,
-            kind: str = "User") -> client.V1ClusterRoleBinding:
+        self, name: str, role_name: str, subject_name: str, kind: str = "User"
+    ) -> client.V1ClusterRoleBinding:
         """
         Update or Create a ClusterRoleBinding for a subject.
 
@@ -490,17 +524,25 @@ class K8sClient:
         Returns:
             The created or updated V1ClusterRoleBinding object
         """
-        cluster_rolebinding_body = self._cluster_rolebinding_body(name, role_name, subject_name, kind)
+        cluster_rolebinding_body = self._cluster_rolebinding_body(
+            name, role_name, subject_name, kind
+        )
 
         try:
-            cluster_role_binding_exists = self.check_cluster_role_binding_exists(name=name)
+            cluster_role_binding_exists = (
+                self.check_cluster_role_binding_exists(name=name)
+            )
 
             if cluster_role_binding_exists:
                 # Update the existing Cluster Role Binding
-                crb = self.rbac_v1.replace_cluster_role_binding(name=name, body=cluster_rolebinding_body)
+                crb = self.rbac_v1.replace_cluster_role_binding(
+                    name=name, body=cluster_rolebinding_body
+                )
                 logger.info(f"Updated ClusterRoleBinding {name}.")
             else:
-                crb = self.rbac_v1.create_cluster_role_binding(body=cluster_rolebinding_body)
+                crb = self.rbac_v1.create_cluster_role_binding(
+                    body=cluster_rolebinding_body
+                )
                 logger.info(f"Created ClusterRoleBinding {name}.")
 
             return crb
@@ -511,11 +553,20 @@ class K8sClient:
 
 @click.command()
 @click.pass_obj
-@click.option("--entity-type", type=click.Choice(["user", "role"]), prompt="Is this a user or role?", help="Specify whether the entity is an IAM user or role.")
-@click.option("--dry-run", is_flag=True, help="Simulate the action without applying changes.")
+@click.option(
+    "--entity-type",
+    type=click.Choice(["user", "role"]),
+    prompt="Is this a user or role?",
+    help="Specify whether the entity is an IAM user or role.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Simulate the action without applying changes.",
+)
 def create(_obj: dict, entity_type, dry_run):
     """Create namespace isolation for an AWS IAM user or role"""
-    predefined_rules: Dict | None = _obj["config"].get("predefined_rules", None)
+    predefined_rules: dict | None = _obj["config"].get("predefined_rules")
     if predefined_rules is None:
         predefined_rules = _default_predefined_rules()
         _obj["config"]["predefined_rules"] = predefined_rules
@@ -523,32 +574,40 @@ def create(_obj: dict, entity_type, dry_run):
     k8c = K8sClient(predefined_rules=predefined_rules, dry_run=dry_run, **vars)
 
     try:
-        entities = list_iam_users() if entity_type == "user" else list_iam_roles()
+        entities = (
+            list_iam_users() if entity_type == "user" else list_iam_roles()
+        )
     except Exception as e:
         logger.error(f"Could not list the entities: {e}")
         raise e
 
     entity = inquirer.fuzzy(
         message="Select IAM User/Role:",
-        choices=[Choice(name=entity.get("name"), value=entity) for entity in entities],
+        choices=[
+            Choice(name=entity.get("name"), value=entity)
+            for entity in entities
+        ],
         max_height="50%",
     ).execute()
     click.echo(f"Selected {entity.get("name")} with ARN: {entity.get("arn")}")
 
-    #ToDo: Select or Create the namespace
+    # ToDo: Select or Create the namespace
     namespace = inquirer.text(
         message="Enter Kubernetes namespace:",
-        validate=EmptyInputValidator("Namespace should not be empty")
+        validate=EmptyInputValidator("Namespace should not be empty"),
     ).execute()
 
-    #ToDo: Select a predefined rule
+    # ToDo: Select a predefined rule
     policy_rule_name = inquirer.fuzzy(
         message="Select the access level:",
         choices=[Choice(rule_name) for rule_name in predefined_rules.keys()],
         max_height="50%",
     ).execute()
 
-    if not click.confirm(f"⚠️ Confirm adding {entity_type} '{entity.get("name")}' with {policy_rule_name} access to namespace '{namespace}'?", abort=True):
+    if not click.confirm(
+        f"⚠️ Confirm adding {entity_type} '{entity.get("name")}' with {policy_rule_name} access to namespace '{namespace}'?",
+        abort=True,
+    ):
         click.echo("❌ Action aborted.")
         return
 
@@ -556,20 +615,32 @@ def create(_obj: dict, entity_type, dry_run):
 
     role_name = f"{entity.get("name")}-{policy_rule_name}"
     policy_rules = _get_policy_rules(predefined_rules.get(policy_rule_name))
-    new_role = k8c.upsert_custom_role(role_name, namespace, policy_rules)
+    k8c.upsert_custom_role(role_name, namespace, policy_rules)
 
-    role_binding = k8c.upsert_custom_rolebinding(
+    k8c.upsert_custom_rolebinding(
         name=role_name,
         namespace=namespace,
         role_name=role_name,
-        subject_name=entity.get("name"))
+        subject_name=entity.get("name"),
+    )
 
-    click.echo(f"✅ {entity_type.capitalize()} '{entity.get("arn")}' successfully added to namespace '{namespace}'.")
+    click.echo(
+        f"✅ {entity_type.capitalize()} '{entity.get("arn")}' successfully added to namespace '{namespace}'."
+    )
 
 
 @click.command()
-@click.option("--entity-type", type=click.Choice(["user", "role"]), prompt="Is this a user or role?", help="Specify whether the entity is an IAM user or role.")
-@click.option("--dry-run", is_flag=True, help="Simulate the action without applying changes.")
+@click.option(
+    "--entity-type",
+    type=click.Choice(["user", "role"]),
+    prompt="Is this a user or role?",
+    help="Specify whether the entity is an IAM user or role.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Simulate the action without applying changes.",
+)
 def delete(entity_type, dry_run):
     """Remove IAM user, group, or role from Kubernetes"""
     k8c = K8sClient(dry_run=dry_run)
@@ -577,22 +648,30 @@ def delete(entity_type, dry_run):
     entities = list_iam_users() if entity_type == "user" else list_iam_roles()
     entity = inquirer.fuzzy(
         message="Select IAM User/Role:",
-        choices=[Choice(name=entity.get("name"), value=entity) for entity in entities],
+        choices=[
+            Choice(name=entity.get("name"), value=entity)
+            for entity in entities
+        ],
         max_height="50%",
     ).execute()
     click.echo(f"Selected {entity.get("name")} with ARN: {entity.get("arn")}")
 
     namespace = inquirer.text(
         message="Enter Kubernetes namespace:",
-        validate=EmptyInputValidator("Namespace should not be empty")
+        validate=EmptyInputValidator("Namespace should not be empty"),
     ).execute()
 
-    if not click.confirm(f"⚠️ Confirm deleting {entity_type} '{entity.get("name")}' access to namespace '{namespace}'?", abort=True):
+    if not click.confirm(
+        f"⚠️ Confirm deleting {entity_type} '{entity.get("name")}' access to namespace '{namespace}'?",
+        abort=True,
+    ):
         click.echo("❌ Action aborted.")
         return
 
     k8c.modify_aws_auth(entity, entity_type, remove=True)
-    click.echo(f"✅ {entity_type.capitalize()} '{entity.get("name")}' access removed from namespace '{namespace}'.")
+    click.echo(
+        f"✅ {entity_type.capitalize()} '{entity.get("name")}' access removed from namespace '{namespace}'."
+    )
 
 
 cli.add_command(create)

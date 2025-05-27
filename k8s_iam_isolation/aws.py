@@ -1,12 +1,13 @@
+import logging
+
 import boto3
 import click
-import logging
 from botocore.exceptions import ClientError
-from k8s_iam_isolation.main import cli
-import logging
 
+from k8s_iam_isolation.main import cli
 
 logger = logging.getLogger("k8s_isolation")
+
 
 def list_iam_users(iam_client):
     """
@@ -20,17 +21,22 @@ def list_iam_users(iam_client):
     """
     try:
         # Create a paginator for the list_users operation
-        paginator = iam_client.get_paginator('list_users')
+        paginator = iam_client.get_paginator("list_users")
         page_iterator = paginator.paginate()
 
         all_users = []
         # Iterate through each page and extend the list of users
         for page in page_iterator:
-            all_users.extend(page['Users'])
-        return [{"name": user["UserName"], "arn": user["Arn"]} for user in all_users]
+            all_users.extend(page["Users"])
+        return [
+            {"name": user["UserName"], "arn": user["Arn"]}
+            for user in all_users
+        ]
     except ClientError as e:
-        error_code = e.response.get('Error', {}).get('Code')
-        logger.error(f"AWS API error listing IAM users (Code: {error_code}): {e}")
+        error_code = e.response.get("Error", {}).get("Code")
+        logger.error(
+            f"AWS API error listing IAM users (Code: {error_code}): {e}"
+        )
         return []
     except Exception as e:
         logger.error(f"An unexpected error occurred listing IAM users: {e}")
@@ -49,17 +55,22 @@ def list_iam_groups(iam_client):
     """
     try:
         # Create a paginator for the list_groups operation
-        paginator = iam_client.get_paginator('list_groups')
+        paginator = iam_client.get_paginator("list_groups")
         page_iterator = paginator.paginate()
 
         all_groups = []
         # Iterate through each page and extend the list of groups
         for page in page_iterator:
-            all_groups.extend(page['Groups'])
-        return [{"name": group["GroupName"], "arn": group["Arn"]} for group in all_groups]
+            all_groups.extend(page["Groups"])
+        return [
+            {"name": group["GroupName"], "arn": group["Arn"]}
+            for group in all_groups
+        ]
     except ClientError as e:
-        error_code = e.response.get('Error', {}).get('Code')
-        logger.error(f"AWS API error listing IAM groups (Code: {error_code}): {e}")
+        error_code = e.response.get("Error", {}).get("Code")
+        logger.error(
+            f"AWS API error listing IAM groups (Code: {error_code}): {e}"
+        )
         return []
     except Exception as e:
         logger.error(f"An unexpected error occurred listing IAM groups: {e}")
@@ -78,17 +89,22 @@ def list_iam_roles(iam_client):
     """
     try:
         # Create a paginator for the list_roles operation
-        paginator = iam_client.get_paginator('list_roles')
+        paginator = iam_client.get_paginator("list_roles")
         page_iterator = paginator.paginate()
 
         all_roles = []
         # Iterate through each page and extend the list of roles
         for page in page_iterator:
-            all_roles.extend(page['Roles'])
-        return [{"name": role["RoleName"], "arn": role["Arn"]} for role in all_roles]
+            all_roles.extend(page["Roles"])
+        return [
+            {"name": role["RoleName"], "arn": role["Arn"]}
+            for role in all_roles
+        ]
     except ClientError as e:
-        error_code = e.response.get('Error', {}).get('Code')
-        logger.error(f"AWS API error listing IAM roles (Code: {error_code}): {e}")
+        error_code = e.response.get("Error", {}).get("Code")
+        logger.error(
+            f"AWS API error listing IAM roles (Code: {error_code}): {e}"
+        )
         return []
     except Exception as e:
         logger.error(f"An unexpected error occurred listing IAM roles: {e}")
@@ -122,5 +138,6 @@ def list_entities():
 def aws():
     """Bulk operations on notes."""
     pass
+
 
 aws.add_command(list_entities)
