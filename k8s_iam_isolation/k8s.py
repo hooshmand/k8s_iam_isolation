@@ -589,6 +589,30 @@ class K8sClient:
                 )
                 raise
 
+    def cleanup_orphaned_resources(self, entity_name: str, namespace: str):
+        """Clean up any orphaned roles/rolebindings for an entity."""
+        try:
+            # List all roles in namespace that match the entity pattern
+            roles = self.rbac_v1.list_namespaced_role(namespace=namespace)
+            for role in roles.items:
+                if role.metadata.name.startswith(f"{entity_name}-"):
+                    # Check if there's a corresponding rolebinding
+                    try:
+                        self.rbac_v1.read_namespaced_role_binding(
+                            name=role.metadata.name, namespace=namespace
+                        )
+                    except ApiException as e:
+                        if e.status == 404:
+                            # Orphaned role found, clean it up
+                            logger.warning(
+                                f"Cleaning up orphaned role: {role.metadata.name}"
+                            )
+                            self.delete_namespaced_role(
+                                role.metadata.name, namespace
+                            )
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+
 
 @click.command()
 @click.pass_obj
