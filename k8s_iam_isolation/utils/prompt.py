@@ -1,21 +1,15 @@
-import logging
-from dataclasses import MISSING, field, fields
-from typing import Any, Callable, Optional, Union
-
+from dataclasses import field, fields, MISSING
+from typing import Any, Callable, List, Optional, Union, Dict
 from InquirerPy import inquirer
 
-logger = logging.getLogger("k8s_isolation")
 
-
-def PromptField(
-    prompt_type: str,
-    message: str,
-    default: Any = MISSING,
-    validate: Optional[Callable[[Any], bool]] = None,
-    transform: Optional[Callable[[Any], Any]] = None,
-    choices: Optional[Union[list[Any], Callable[[], list[Any]]]] = None,
-    prompt_args: Optional[dict] = None,
-):
+def PromptField(prompt_type: str,
+               message: str,
+               default: Any = MISSING,
+               validate: Optional[Callable[[Any], bool]] = None,
+               transform: Optional[Callable[[Any], Any]] = None,
+               choices: Optional[Union[List[Any], Callable[[], List[Any]]]] = None,
+               prompt_args: Optional[dict] = None):
     """
     Helper to create a dataclass field with attached InquirerPy prompt metadata.
     - prompt_type: Name of the InquirerPy prompt (e.g., "text", "confirm", "select").
@@ -43,7 +37,7 @@ def PromptField(
         return field(default=default, metadata=meta)
 
 
-def prompt_factory(cls) -> dict:
+def prompt_factory(cls) -> Dict:
     """
     Prompt the user for each field's value and return an instance of the dataclass.
     Uses the metadata in each field to determine prompt type, message, default, etc.
@@ -62,9 +56,7 @@ def prompt_factory(cls) -> dict:
         if field_def.default is not MISSING and field_def.default is not None:
             default_val = field_def.default
         # If a default factory is set (callable), call it to get a default value
-        if (
-            field_def.default_factory is not MISSING
-        ):  # default_factory for dataclass
+        if field_def.default_factory is not MISSING:  # default_factory for dataclass
             default_val = field_def.default_factory()
 
         # Gather prompt parameters
@@ -82,14 +74,10 @@ def prompt_factory(cls) -> dict:
         if "choices" in meta:
             choices = meta["choices"]
             # If choices is a callable, call it to generate the list
-            prompt_kwargs["choices"] = (
-                choices() if callable(choices) else choices
-            )
+            prompt_kwargs["choices"] = choices() if callable(choices) else choices
 
         # Invoke the appropriate InquirerPy prompt function
         prompt_func = getattr(inquirer, prompt_type)
-        result = prompt_func(
-            **prompt_kwargs
-        ).execute()  # run the prompt and get user input
+        result = prompt_func(**prompt_kwargs).execute()  # run the prompt and get user input
         values[field_def.name] = result
     return values

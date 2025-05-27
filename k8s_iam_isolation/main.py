@@ -1,11 +1,5 @@
-import logging
-
 import click
-
 from k8s_iam_isolation.config import get_config, save_config
-from k8s_iam_isolation.custom_logging.logger import setup_logging
-
-logger = logging.getLogger("k8s_isolation")
 
 
 @click.group()
@@ -18,8 +12,6 @@ def cli(ctx: click.Context):
     by modifying the aws-auth ConfigMap and creating relevant RBAC roles.
     """
     config = get_config()
-
-    setup_logging(config.get("log_config"))
 
     ctx.ensure_object(dict)
     ctx.obj["config"] = config
@@ -49,10 +41,10 @@ def show(_obj: dict):
 
 @config.command()
 @click.pass_context
-@click.option("--log-config", "-l", type=click.STRING)
-def update(ctx: click.Context, log_config):
+@click.option("--log-file", "-l", type=click.STRING)
+def update(ctx: click.Context, log_file):
     """Setup the notes directory."""
-    ctx.obj["config"]["log_config"] = log_config
+    ctx.obj["config"]["log_file"] = log_file
 
     save_config(ctx.obj["config"])
-    click.echo("Config file updated.")
+    click.echo(f"Config file updated.")
