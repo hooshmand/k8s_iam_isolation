@@ -691,18 +691,27 @@ def create(_obj: dict, entity_type, dry_run):
         click.echo("❌ Action aborted.")
         return
 
-    k8c.modify_aws_auth(entity, entity_type, remove=False)
+    try:
+        k8c.modify_aws_auth(entity, entity_type, remove=False)
 
-    role_name = f"{entity.get("name")}-{policy_rule_name}"
-    policy_rules = _get_policy_rules(predefined_rules.get(policy_rule_name))
-    k8c.upsert_custom_role(role_name, namespace, policy_rules)
+        role_name = f"{entity.get("name")}-{policy_rule_name}"
+        policy_rules = _get_policy_rules(
+            predefined_rules.get(policy_rule_name)
+        )
+        k8c.upsert_custom_role(role_name, namespace, policy_rules)
 
-    k8c.upsert_custom_rolebinding(
-        name=role_name,
-        namespace=namespace,
-        role_name=role_name,
-        subject_name=entity.get("name"),
-    )
+        k8c.upsert_custom_rolebinding(
+            name=role_name,
+            namespace=namespace,
+            role_name=role_name,
+            subject_name=entity.get("name"),
+        )
+    except click.Abort:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create isolation for {entity_type}: {e}")
+        click.echo(click.style(f"❌ Error: {e}", fg="red"), err=True)
+        raise click.ClickException("Operation failed. Check logs for details.")
 
     click.echo(
         f"✅ {entity_type.capitalize()} '{entity.get("arn")}' successfully added to namespace '{namespace}'."
