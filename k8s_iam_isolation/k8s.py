@@ -3,6 +3,7 @@ import os
 from dataclasses import dataclass, field
 from functools import wraps
 
+import boto3
 import click
 import yaml
 from InquirerPy import inquirer
@@ -18,7 +19,7 @@ from k8s_iam_isolation.utils.prompt import PromptField, prompt_factory
 logger = logging.getLogger("k8s_isolation")
 
 
-def _k8s_contexts():
+def _k8s_contexts() -> list[Choice]:
     """Fetch the Kubernetes contexts from the kubeconfig"""
     context_choices = []
     contexts, default_context = config.list_kube_config_contexts()
@@ -84,21 +85,23 @@ def dry_run_guard(mock_response=None):
 
 @dataclass
 class K8sClient:
+
+    predefined_rules: dict
+    # Optional client args - default to None
+    core_v1: client.CoreV1Api
+    apps_v1: client.AppsV1Api
+    rbac_v1: client.RbacAuthorizationV1Api
+    batch_v1: client.BatchV1Api
+    network_v1beta1: client.NetworkingV1beta1Api
+    network_v1: client.NetworkingV1Api
+    storage_v1: client.StorageV1Api
+
     context: dict = PromptField(
         prompt_type="select",
         message="Choose the correct context:",
         choices=_k8s_contexts,
     )
-    predefined_rules: dict
     dry_run: bool = field(default=False)
-    # Optional client args - default to None
-    core_v1: client.CoreV1Api = None
-    apps_v1: client.AppsV1Api = None
-    rbac_v1: client.RbacAuthorizationV1Api = None
-    batch_v1: client.BatchV1Api = None
-    network_v1beta1: client.NetworkingV1beta1Api = None
-    network_v1: client.NetworkingV1Api = None
-    storage_v1: client.StorageV1Api = None
 
     def __post_init__(self, **kwargs):
         if not hasattr(self, "_kube_config_loaded"):
@@ -550,6 +553,48 @@ class K8sClient:
             logger.error(f"Failed to upsert ClusterRoleBinding {name}: {e}")
             raise e
 
+    @dry_run_guard(
+        mock_response=lambda self, *args, **kwargs: None
+    )  # Basic mock for dry run
+    def delete_namespaced_role_binding(self, name: str, namespace: str):
+        try:
+            self.rbac_v1.delete_namespaced_role_binding(
+                name=name, namespace=namespace
+            )
+            logging.info(
+                f"RoleBinding '{name}' deleted from namespace '{namespace}'."
+            )
+        except ApiException as e:
+            if e.status == 404:
+                logging.info(
+                    f"RoleBinding '{name}' not found in namespace '{namespace}'."
+                )
+            else:
+                logging.error(
+                    f"Failed to delete RoleBinding '{name}' in namespace '{namespace}': {e}"
+                )
+                raise
+
+    @dry_run_guard(
+        mock_response=lambda self, *args, **kwargs: None
+    )  # Basic mock for dry run
+    def delete_namespaced_role(self, name: str, namespace: str):
+        try:
+            self.rbac_v1.delete_namespaced_role(name=name, namespace=namespace)
+            logging.info(
+                f"Role '{name}' deleted from namespace '{namespace}'."
+            )
+        except ApiException as e:
+            if e.status == 404:
+                logging.info(
+                    f"Role '{name}' not found in namespace '{namespace}'."
+                )
+            else:
+                logging.error(
+                    f"Failed to delete Role '{name}' in namespace '{namespace}': {e}"
+                )
+                raise
+
 
 @click.command()
 @click.pass_obj
@@ -566,6 +611,7 @@ class K8sClient:
 )
 def create(_obj: dict, entity_type, dry_run):
     """Create namespace isolation for an AWS IAM user or role"""
+    iam_client = boto3.client("iam")
     predefined_rules: dict | None = _obj["config"].get("predefined_rules")
     if predefined_rules is None:
         predefined_rules = _default_predefined_rules()
@@ -575,14 +621,29 @@ def create(_obj: dict, entity_type, dry_run):
 
     try:
         entities = (
-            list_iam_users() if entity_type == "user" else list_iam_roles()
+            list_iam_users(iam_client)
+            if entity_type == "user"
+            else list_iam_roles(iam_client)
         )
     except Exception as e:
         logger.error(f"Could not list the entities: {e}")
-        raise e
+
+    if not entities:
+        click.echo(
+            click.style(
+                f"No IAM {entity_type}s found, or an error occurred during listing from AWS.",
+                fg="red",
+            ),
+            err=True,
+        )
+        click.echo(
+            "Please ensure the AWS credentials are correct and have necessary IAM list permissions.",
+            err=True,
+        )
+        raise click.Abort()
 
     entity = inquirer.fuzzy(
-        message="Select IAM User/Role:",
+        message=f"Select IAM {entity_type.capitalize()}:",
         choices=[
             Choice(name=entity.get("name"), value=entity)
             for entity in entities
@@ -630,6 +691,7 @@ def create(_obj: dict, entity_type, dry_run):
 
 
 @click.command()
+@click.pass_obj
 @click.option(
     "--entity-type",
     type=click.Choice(["user", "role"]),
@@ -641,13 +703,47 @@ def create(_obj: dict, entity_type, dry_run):
     is_flag=True,
     help="Simulate the action without applying changes.",
 )
-def delete(entity_type, dry_run):
+def delete(_obj: dict, entity_type, dry_run):
     """Remove IAM user, group, or role from Kubernetes"""
-    k8c = K8sClient(dry_run=dry_run)
+    _config = _obj["config"]  # Get config from context
+    predefined_rules: dict | None = _config.get("predefined_rules")
+    if predefined_rules is None:
+        predefined_rules = _default_predefined_rules()
+        # _config["predefined_rules"] = predefined_rules # Not strictly necessary for delete
 
-    entities = list_iam_users() if entity_type == "user" else list_iam_roles()
+    vars_for_k8s_client = prompt_factory(
+        K8sClient,
+    )
+    k8c = K8sClient(
+        predefined_rules=predefined_rules,
+        dry_run=dry_run,
+        **vars_for_k8s_client,
+    )
+
+    iam_client = boto3.client(
+        "iam"
+    )  # Ensure iam_client is defined, as per previous fix
+    entities = (
+        list_iam_users(iam_client)
+        if entity_type == "user"
+        else list_iam_roles(iam_client)
+    )
+    if not entities:
+        click.echo(
+            click.style(
+                f"No IAM {entity_type}s found, or an error occurred during listing from AWS.",
+                fg="red",
+            ),
+            err=True,
+        )
+        click.echo(
+            "Please ensure the AWS credentials are correct and have necessary IAM list permissions.",
+            err=True,
+        )
+        raise click.Abort()
+
     entity = inquirer.fuzzy(
-        message="Select IAM User/Role:",
+        message=f"Select IAM {entity_type.capitalize()} to delete access for:",
         choices=[
             Choice(name=entity.get("name"), value=entity)
             for entity in entities
@@ -661,16 +757,38 @@ def delete(entity_type, dry_run):
         validate=EmptyInputValidator("Namespace should not be empty"),
     ).execute()
 
+    policy_rule_name = inquirer.fuzzy(
+        message="Select the policy rule name that was used for creation:",
+        choices=[Choice(rule_name) for rule_name in predefined_rules.keys()],
+        max_height="50%",
+    ).execute()
+
+    role_name = f"{entity.get("name")}-{policy_rule_name}"
+
     if not click.confirm(
-        f"⚠️ Confirm deleting {entity_type} '{entity.get("name")}' access to namespace '{namespace}'?",
+        f"⚠️ Confirm deleting {entity_type} '{entity.get("name")}' access to namespace '{namespace}', including associated Role '{role_name}' and RoleBinding '{role_name}'?",
         abort=True,
     ):
         click.echo("❌ Action aborted.")
         return
 
+    # Remove from aws-auth ConfigMap
     k8c.modify_aws_auth(entity, entity_type, remove=True)
+
+    # Delete RoleBinding
+    logging.info(
+        f"Attempting to delete RoleBinding '{role_name}' in namespace '{namespace}'."
+    )
+    k8c.delete_namespaced_role_binding(name=role_name, namespace=namespace)
+
+    # Delete Role
+    logging.info(
+        f"Attempting to delete Role '{role_name}' in namespace '{namespace}'."
+    )
+    k8c.delete_namespaced_role(name=role_name, namespace=namespace)
+
     click.echo(
-        f"✅ {entity_type.capitalize()} '{entity.get("name")}' access removed from namespace '{namespace}'."
+        f"✅ {entity_type.capitalize()} '{entity.get("name")}' access, Role, and RoleBinding removed from namespace '{namespace}'."
     )
 
 

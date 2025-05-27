@@ -12,7 +12,11 @@ logger = logging.getLogger("k8s_isolation")
 @click.version_option()
 @click.pass_context
 def cli(ctx: click.Context):
-    """Kubernetes Namespace Isolation CLI for AWS IAM Users and Roles"""
+    """Kubernetes Namespace Isolation CLI for AWS IAM Users and Roles.
+
+    This tool helps manage AWS IAM entity access to Kubernetes namespaces
+    by modifying the aws-auth ConfigMap and creating relevant RBAC roles.
+    """
     config = get_config()
 
     setup_logging(config.get("log_config"))

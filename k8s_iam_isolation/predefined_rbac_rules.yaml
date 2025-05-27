@@ -44,9 +44,6 @@ predefined_rules:
     - apiGroups: ["rbac.authorization.k8s.io"]
       resources: ["roles", "rolebindings"]
       verbs: ["get", "list", "watch", "create", "update", "delete"]
-    - apiGroups: ["policy"]
-      resources: ["podsecuritypolicies"]
-      verbs: ["get", "list", "watch"]
 
   # Specialized roles
   monitoring:
