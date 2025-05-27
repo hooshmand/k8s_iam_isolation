@@ -34,7 +34,7 @@ def _default_predefined_rules() -> dict:
         os.path.join(os.path.dirname(__file__), "predefined_rbac_rules.yaml")
     ) as file:
         predefined_rbac_rules = yaml.safe_load(file)
-    return predefined_rbac_rules.get("predefined_rules")
+    return predefined_rbac_rules.get("predefined_rules", {})
 
 
 def _get_policy_rules(rule_config: list) -> list:
@@ -645,6 +645,7 @@ def create(_obj: dict, entity_type, dry_run):
         )
     except Exception as e:
         logger.error(f"Could not list the entities: {e}")
+        entities = []
 
     if not entities:
         click.echo(
