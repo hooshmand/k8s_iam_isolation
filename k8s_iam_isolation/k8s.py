@@ -613,6 +613,30 @@ class K8sClient:
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
 
+    def validate_namespace(self, namespace: str) -> bool:
+        """Check if namespace exists, offer to create if not."""
+        try:
+            self.core_v1.read_namespace(name=namespace)
+            return True
+        except ApiException as e:
+            if e.status == 404:
+                if click.confirm(
+                    f"Namespace '{namespace}' doesn't exist. Create it?"
+                ):
+                    self.create_namespace(namespace)
+                    return True
+                return False
+            raise e
+
+    @dry_run_guard()
+    def create_namespace(self, namespace: str):
+        """Create a new namespace."""
+        ns_body = client.V1Namespace(
+            metadata=client.V1ObjectMeta(name=namespace)
+        )
+        self.core_v1.create_namespace(body=ns_body)
+        logger.info(f"Created namespace: {namespace}")
+
 
 @click.command()
 @click.pass_obj
@@ -692,6 +716,9 @@ def create(_obj: dict, entity_type, dry_run):
         return
 
     try:
+        if not k8c.validate_namespace(namespace):
+            raise click.Abort()
+
         k8c.modify_aws_auth(entity, entity_type, remove=False)
 
         role_name = f"{entity.get("name")}-{policy_rule_name}"
