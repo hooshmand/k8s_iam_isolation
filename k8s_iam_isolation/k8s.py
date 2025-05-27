@@ -34,7 +34,7 @@ def _default_predefined_rules() -> dict:
         os.path.join(os.path.dirname(__file__), "predefined_rbac_rules.yaml")
     ) as file:
         predefined_rbac_rules = yaml.safe_load(file)
-    return predefined_rbac_rules.get("predefined_rules")
+    return predefined_rbac_rules.get("predefined_rules", {})
 
 
 def _get_policy_rules(rule_config: list) -> list:
@@ -87,15 +87,6 @@ def dry_run_guard(mock_response=None):
 class K8sClient:
 
     predefined_rules: dict
-    # Optional client args - default to None
-    core_v1: client.CoreV1Api
-    apps_v1: client.AppsV1Api
-    rbac_v1: client.RbacAuthorizationV1Api
-    batch_v1: client.BatchV1Api
-    network_v1beta1: client.NetworkingV1beta1Api
-    network_v1: client.NetworkingV1Api
-    storage_v1: client.StorageV1Api
-
     context: dict = PromptField(
         prompt_type="select",
         message="Choose the correct context:",
@@ -107,20 +98,13 @@ class K8sClient:
         if not hasattr(self, "_kube_config_loaded"):
             config.load_kube_config(context=self.context)
             self._kube_config_loaded = True
-        if self.core_v1 is None:
-            self.core_v1 = client.CoreV1Api()
-        if self.apps_v1 is None:
-            self.apps_v1 = client.AppsV1Api()
-        if self.rbac_v1 is None:
-            self.rbac_v1 = client.RbacAuthorizationV1Api()
-        if self.batch_v1 is None:
-            self.batch_v1 = client.BatchV1Api()
-        if self.network_v1beta1 is None:
-            self.network_v1beta1 = client.NetworkingV1beta1Api()
-        if self.network_v1 is None:
-            self.network_v1 = client.NetworkingV1Api()
-        if self.storage_v1 is None:
-            self.storage_v1 = client.StorageV1Api()
+        self.core_v1 = client.CoreV1Api()
+        self.apps_v1 = client.AppsV1Api()
+        self.rbac_v1 = client.RbacAuthorizationV1Api()
+        self.batch_v1 = client.BatchV1Api()
+        self.network_v1beta1 = client.NetworkingV1beta1Api()
+        self.network_v1 = client.NetworkingV1Api()
+        self.storage_v1 = client.StorageV1Api()
 
     def _read_aws_auth(self):
         try:
@@ -194,25 +178,35 @@ class K8sClient:
                 "groups": ["system:authenticated"],
             }
 
+            arn_key = "userarn" if entity_type == "user" else "rolearn"
+            entity_arn = entity.get("arn")
+
             existing_entries = yaml.safe_load(
                 aws_auth_cm.data.get(map_key, "[]")
             )
 
+            # Find existing entry by ARN (more reliable than dict comparison)
+            existing_entry_idx = None
+            for i, entry in enumerate(existing_entries):
+                if entry.get(arn_key) == entity_arn:
+                    existing_entry_idx = i
+                    break
+
             if remove:
-                existing_entries = [
-                    entry
-                    for entry in existing_entries
-                    if entry.get("userarn", entry.get("rolearn"))
-                    != new_entry.get("userarn", new_entry.get("rolearn"))
-                ]
-                logger.info(
-                    f"✅ Removed {entity_type} '{entity.get("name")}' from aws-auth ConfigMap."
-                )
+                if existing_entry_idx is not None:
+                    existing_entries.pop(existing_entry_idx)
+                    logger.info(
+                        f"✅ Removed {entity_type} '{entity.get("name")}' from aws-auth ConfigMap."
+                    )
             else:
-                if new_entry not in existing_entries:
+                if existing_entry_idx is None:
                     existing_entries.append(new_entry)
                     logger.info(
-                        f"✅ Added {entity_type} '{entity.get("name")}' to aws-auth ConfigMap."
+                        f"✅ Added {entity_type} '{entity.get('name')}' to aws-auth ConfigMap."
+                    )
+                else:
+                    logger.info(
+                        f"ℹ️ {entity_type} '{entity.get('name')}' already exists in aws-auth ConfigMap."
                     )
 
             aws_auth_cm.data[map_key] = yaml.dump(existing_entries)
@@ -326,7 +320,7 @@ class K8sClient:
 
     def _cluster_role_body(
         self, name: str, rules: list[client.V1PolicyRule]
-    ) -> client.V1Role:
+    ) -> client.V1ClusterRole:
         """
         Create a Cluster Role body.
 
@@ -337,7 +331,7 @@ class K8sClient:
         Returns:
             The created V1Role body
         """
-        role_body = client.V1Role(
+        role_body = client.V1ClusterRole(
             api_version="rbac.authorization.k8s.io/v1",
             kind="ClusterRole",
             metadata=client.V1ObjectMeta(name=name),
@@ -349,7 +343,7 @@ class K8sClient:
     @dry_run_guard(_cluster_role_body)
     def upsert_custom_cluster_role(
         self, name: str, rules: list[client.V1PolicyRule]
-    ) -> client.V1Role:
+    ) -> client.V1ClusterRole:
         """
         Update or Create a custom Cluster Role with specific permissions.
 
@@ -595,6 +589,187 @@ class K8sClient:
                 )
                 raise
 
+    def cleanup_orphaned_resources(self, entity_name: str, namespace: str):
+        """Clean up any orphaned roles/rolebindings for an entity."""
+        try:
+            # List all roles in namespace that match the entity pattern
+            roles = self.rbac_v1.list_namespaced_role(namespace=namespace)
+            for role in roles.items:
+                if role.metadata.name.startswith(f"{entity_name}-"):
+                    # Check if there's a corresponding rolebinding
+                    try:
+                        self.rbac_v1.read_namespaced_role_binding(
+                            name=role.metadata.name, namespace=namespace
+                        )
+                    except ApiException as e:
+                        if e.status == 404:
+                            # Orphaned role found, clean it up
+                            logger.warning(
+                                f"Cleaning up orphaned role: {role.metadata.name}"
+                            )
+                            self.delete_namespaced_role(
+                                role.metadata.name, namespace
+                            )
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+
+    def validate_namespace(self, namespace: str) -> bool:
+        """Check if namespace exists, offer to create if not."""
+        try:
+            self.core_v1.read_namespace(name=namespace)
+            return True
+        except ApiException as e:
+            if e.status == 404:
+                if click.confirm(
+                    f"Namespace '{namespace}' doesn't exist. Create it?"
+                ):
+                    self.create_namespace(namespace)
+                    return True
+                return False
+            raise e
+
+    @dry_run_guard()
+    def create_namespace(self, namespace: str):
+        """Create a new namespace."""
+        ns_body = client.V1Namespace(
+            metadata=client.V1ObjectMeta(name=namespace)
+        )
+        self.core_v1.create_namespace(body=ns_body)
+        logger.info(f"Created namespace: {namespace}")
+
+    def _extract_rule_dict(self, rule):
+        """
+        Extract rule attributes into a standardized dictionary format.
+        Handles both object attributes and dictionary keys.
+
+        Args:
+            rule: RBAC rule (object or dict)
+
+        Returns:
+            dict: Standardized rule dictionary
+        """
+        if isinstance(rule, dict):
+            # Rule is already a dictionary
+            return {
+                "resources": rule.get("resources", []) or [],
+                "verbs": rule.get("verbs", []) or [],
+                "api_groups": rule.get("api_groups", []) or [],
+            }
+        else:
+            # Rule is an object with attributes
+            return {
+                "resources": getattr(rule, "resources", None) or [],
+                "verbs": getattr(rule, "verbs", None) or [],
+                "api_groups": getattr(rule, "api_groups", None) or [],
+            }
+
+    def _matches_combination(self, rule, dangerous_combo):
+        """
+        Check if an RBAC rule matches a dangerous combination pattern.
+
+        Args:
+            rule: RBAC rule object with attributes like resources, verbs, api_groups
+            dangerous_combo: Dictionary containing the dangerous pattern
+
+        Returns:
+            bool: True if the rule contains all permissions from the dangerous pattern
+        """
+        try:
+            rule_dict = self._extract_rule_dict(rule)
+
+            # Log the comparison for debugging
+            logger.debug(
+                f"Checking rule {rule_dict} against pattern {dangerous_combo.get('name', 'unnamed')}"
+            )
+
+            # Check each attribute in the dangerous combination
+            for key in ["resources", "verbs", "api_groups"]:
+                if key not in dangerous_combo:
+                    continue
+
+                dangerous_values = set(dangerous_combo[key])
+                rule_values = set(rule_dict.get(key, []))
+
+                # Skip empty dangerous patterns
+                if not dangerous_values:
+                    continue
+
+                # Check if dangerous pattern is subset of rule permissions
+                if not dangerous_values.issubset(rule_values):
+                    logger.debug(
+                        f"Pattern mismatch on {key}: {dangerous_values} not subset of {rule_values}"
+                    )
+                    return False
+
+            logger.debug(
+                f"Rule matches dangerous pattern: {dangerous_combo.get('name', 'unnamed')}"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Error matching rule against pattern: {e}")
+            return False
+
+    def validate_rbac_rules(
+        self,
+        rules: list,
+        config_file: str = "dangerous_rbac_combinations.yaml",
+    ) -> bool:
+        """Validate RBAC rules don't grant excessive permissions."""
+
+        try:
+            with open(config_file) as f:
+                config = yaml.safe_load(f)
+        except FileNotFoundError:
+            logger.error(f"Configuration file {config_file} not found")
+            return True
+        except yaml.YAMLError as e:
+            logger.error(f"Error parsing YAML configuration: {e}")
+            return True
+
+        for rule in rules:
+            for combo in config["dangerous_combinations"]:
+                if self._matches_combination(rule, combo):
+                    severity = combo.get("severity", "medium")
+                    name = combo.get("name", "unnamed_pattern")
+                    description = combo.get(
+                        "description", "No description available"
+                    )
+
+                    # Handle different severity levels
+                    if severity == "critical":
+                        logger.error(f"🚨 CRITICAL SECURITY RISK: {name}")
+                        logger.error(f"   Description: {description}")
+                        logger.error(
+                            f"   Rule: {self._extract_rule_dict(rule)}"
+                        )
+                        if not click.confirm(
+                            "⚠️  This poses an EXTREME security risk! Continue anyway?",
+                            abort=True,
+                        ):
+                            return False
+
+                    elif severity == "high":
+                        logger.warning(f"⚠️  HIGH SECURITY RISK: {name}")
+                        logger.warning(f"   Description: {description}")
+                        logger.warning(
+                            f"   Rule: {self._extract_rule_dict(rule)}"
+                        )
+                        if not click.confirm(
+                            "Continue with this high-risk permission?"
+                        ):
+                            return False
+
+                    elif severity == "medium":
+                        logger.info(f"ℹ️  MEDIUM SECURITY RISK: {name}")
+                        logger.info(f"   Description: {description}")
+                        # Continue without prompting for medium risk
+
+                    elif severity == "low":
+                        logger.debug(f"Low risk pattern detected: {name}")
+
+        return True
+
 
 @click.command()
 @click.pass_obj
@@ -627,6 +802,7 @@ def create(_obj: dict, entity_type, dry_run):
         )
     except Exception as e:
         logger.error(f"Could not list the entities: {e}")
+        entities = []
 
     if not entities:
         click.echo(
@@ -672,18 +848,34 @@ def create(_obj: dict, entity_type, dry_run):
         click.echo("❌ Action aborted.")
         return
 
-    k8c.modify_aws_auth(entity, entity_type, remove=False)
+    try:
+        if not k8c.validate_namespace(namespace):
+            raise click.Abort()
 
-    role_name = f"{entity.get("name")}-{policy_rule_name}"
-    policy_rules = _get_policy_rules(predefined_rules.get(policy_rule_name))
-    k8c.upsert_custom_role(role_name, namespace, policy_rules)
+        k8c.modify_aws_auth(entity, entity_type, remove=False)
 
-    k8c.upsert_custom_rolebinding(
-        name=role_name,
-        namespace=namespace,
-        role_name=role_name,
-        subject_name=entity.get("name"),
-    )
+        role_name = f"{entity.get("name")}-{policy_rule_name}"
+        policy_rules = _get_policy_rules(
+            predefined_rules.get(policy_rule_name)
+        )
+
+        if not k8c.validate_rbac_rules(policy_rules):
+            raise click.Abort()
+
+        k8c.upsert_custom_role(role_name, namespace, policy_rules)
+
+        k8c.upsert_custom_rolebinding(
+            name=role_name,
+            namespace=namespace,
+            role_name=role_name,
+            subject_name=entity.get("name"),
+        )
+    except click.Abort:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create isolation for {entity_type}: {e}")
+        click.echo(click.style(f"❌ Error: {e}", fg="red"), err=True)
+        raise click.ClickException("Operation failed. Check logs for details.")
 
     click.echo(
         f"✅ {entity_type.capitalize()} '{entity.get("arn")}' successfully added to namespace '{namespace}'."
