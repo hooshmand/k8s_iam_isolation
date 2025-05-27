@@ -87,15 +87,6 @@ def dry_run_guard(mock_response=None):
 class K8sClient:
 
     predefined_rules: dict
-    # Optional client args - default to None
-    core_v1: client.CoreV1Api
-    apps_v1: client.AppsV1Api
-    rbac_v1: client.RbacAuthorizationV1Api
-    batch_v1: client.BatchV1Api
-    network_v1beta1: client.NetworkingV1beta1Api
-    network_v1: client.NetworkingV1Api
-    storage_v1: client.StorageV1Api
-
     context: dict = PromptField(
         prompt_type="select",
         message="Choose the correct context:",
@@ -107,20 +98,13 @@ class K8sClient:
         if not hasattr(self, "_kube_config_loaded"):
             config.load_kube_config(context=self.context)
             self._kube_config_loaded = True
-        if self.core_v1 is None:
-            self.core_v1 = client.CoreV1Api()
-        if self.apps_v1 is None:
-            self.apps_v1 = client.AppsV1Api()
-        if self.rbac_v1 is None:
-            self.rbac_v1 = client.RbacAuthorizationV1Api()
-        if self.batch_v1 is None:
-            self.batch_v1 = client.BatchV1Api()
-        if self.network_v1beta1 is None:
-            self.network_v1beta1 = client.NetworkingV1beta1Api()
-        if self.network_v1 is None:
-            self.network_v1 = client.NetworkingV1Api()
-        if self.storage_v1 is None:
-            self.storage_v1 = client.StorageV1Api()
+        self.core_v1 = client.CoreV1Api()
+        self.apps_v1 = client.AppsV1Api()
+        self.rbac_v1 = client.RbacAuthorizationV1Api()
+        self.batch_v1 = client.BatchV1Api()
+        self.network_v1beta1 = client.NetworkingV1beta1Api()
+        self.network_v1 = client.NetworkingV1Api()
+        self.storage_v1 = client.StorageV1Api()
 
     def _read_aws_auth(self):
         try:
