@@ -178,25 +178,35 @@ class K8sClient:
                 "groups": ["system:authenticated"],
             }
 
+            arn_key = "userarn" if entity_type == "user" else "rolearn"
+            entity_arn = entity.get("arn")
+
             existing_entries = yaml.safe_load(
                 aws_auth_cm.data.get(map_key, "[]")
             )
 
+            # Find existing entry by ARN (more reliable than dict comparison)
+            existing_entry_idx = None
+            for i, entry in enumerate(existing_entries):
+                if entry.get(arn_key) == entity_arn:
+                    existing_entry_idx = i
+                    break
+
             if remove:
-                existing_entries = [
-                    entry
-                    for entry in existing_entries
-                    if entry.get("userarn", entry.get("rolearn"))
-                    != new_entry.get("userarn", new_entry.get("rolearn"))
-                ]
-                logger.info(
-                    f"✅ Removed {entity_type} '{entity.get("name")}' from aws-auth ConfigMap."
-                )
+                if existing_entry_idx is not None:
+                    existing_entries.pop(existing_entry_idx)
+                    logger.info(
+                        f"✅ Removed {entity_type} '{entity.get("name")}' from aws-auth ConfigMap."
+                    )
             else:
-                if new_entry not in existing_entries:
+                if existing_entry_idx is None:
                     existing_entries.append(new_entry)
                     logger.info(
-                        f"✅ Added {entity_type} '{entity.get("name")}' to aws-auth ConfigMap."
+                        f"✅ Added {entity_type} '{entity.get('name')}' to aws-auth ConfigMap."
+                    )
+                else:
+                    logger.info(
+                        f"ℹ️ {entity_type} '{entity.get('name')}' already exists in aws-auth ConfigMap."
                     )
 
             aws_auth_cm.data[map_key] = yaml.dump(existing_entries)
