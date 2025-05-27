@@ -1,0 +1,337 @@
+# Dangerous RBAC Combinations Configuration
+# This file defines RBAC permission patterns that pose security risks
+# and should be flagged during validation
+
+dangerous_combinations:
+  # ============================================================================
+  # CRITICAL RISK - Complete cluster compromise
+  # ============================================================================
+  - name: "wildcard_all_permissions"
+    description: "Full administrative access to all resources"
+    severity: "critical"
+    resources: ["*"]
+    verbs: ["*"]
+    api_groups: []
+
+  - name: "unrestricted_secrets_access"
+    description: "Full access to all secrets in core API group"
+    severity: "critical"
+    resources: ["secrets"]
+    verbs: ["*"]
+    api_groups: [""]
+
+  # ============================================================================
+  # CLUSTER ADMINISTRATION - RBAC manipulation
+  # ============================================================================
+  - name: "cluster_role_manipulation"
+    description: "Can modify cluster-wide RBAC roles"
+    severity: "critical"
+    resources: ["clusterroles"]
+    verbs: ["*"]
+    api_groups: ["rbac.authorization.k8s.io"]
+
+  - name: "cluster_role_binding_manipulation"
+    description: "Can modify cluster-wide RBAC bindings"
+    severity: "critical"
+    resources: ["clusterrolebindings"]
+    verbs: ["*"]
+    api_groups: ["rbac.authorization.k8s.io"]
+
+  - name: "namespace_role_manipulation"
+    description: "Can modify namespace RBAC roles"
+    severity: "high"
+    resources: ["roles"]
+    verbs: ["*"]
+    api_groups: ["rbac.authorization.k8s.io"]
+
+  - name: "namespace_role_binding_manipulation"
+    description: "Can modify namespace RBAC bindings"
+    severity: "high"
+    resources: ["rolebindings"]
+    verbs: ["*"]
+    api_groups: ["rbac.authorization.k8s.io"]
+
+  # ============================================================================
+  # NODE ACCESS - Infrastructure level access
+  # ============================================================================
+  - name: "node_administrative_access"
+    description: "Full access to cluster nodes"
+    severity: "critical"
+    resources: ["nodes"]
+    verbs: ["*"]
+    api_groups: [""]
+
+  - name: "node_proxy_access"
+    description: "Can proxy requests to nodes"
+    severity: "critical"
+    resources: ["nodes/proxy"]
+    verbs: ["*"]
+    api_groups: [""]
+
+  - name: "node_metrics_access"
+    description: "Can access sensitive node metrics"
+    severity: "medium"
+    resources: ["nodes/metrics"]
+    verbs: ["get"]
+    api_groups: [""]
+
+  - name: "node_stats_access"
+    description: "Can access node statistics"
+    severity: "medium"
+    resources: ["nodes/stats"]
+    verbs: ["get"]
+    api_groups: [""]
+
+  # ============================================================================
+  # CONTAINER SECURITY - Pod and container manipulation
+  # ============================================================================
+  - name: "pod_creation_modification"
+    description: "Can create/modify pods (potential privilege escalation)"
+    severity: "high"
+    resources: ["pods"]
+    verbs: ["create", "update", "patch"]
+    api_groups: [""]
+
+  - name: "pod_exec_access"
+    description: "Can execute commands in containers"
+    severity: "high"
+    resources: ["pods/exec"]
+    verbs: ["create"]
+    api_groups: [""]
+
+  - name: "pod_attach_access"
+    description: "Can attach to container processes"
+    severity: "high"
+    resources: ["pods/attach"]
+    verbs: ["create"]
+    api_groups: [""]
+
+  - name: "pod_port_forward"
+    description: "Can forward ports from pods"
+    severity: "medium"
+    resources: ["pods/portforward"]
+    verbs: ["create"]
+    api_groups: [""]
+
+  - name: "pod_binding_control"
+    description: "Can control pod scheduling (scheduler bypass)"
+    severity: "high"
+    resources: ["pods/binding"]
+    verbs: ["create"]
+    api_groups: [""]
+
+  # ============================================================================
+  # SERVICE ACCOUNT SECURITY
+  # ============================================================================
+  - name: "service_account_manipulation"
+    description: "Can create/modify service accounts"
+    severity: "high"
+    resources: ["serviceaccounts"]
+    verbs: ["create", "update", "patch"]
+    api_groups: [""]
+
+  - name: "service_account_token_creation"
+    description: "Can create service account tokens"
+    severity: "high"
+    resources: ["serviceaccounts/token"]
+    verbs: ["create"]
+    api_groups: [""]
+
+  - name: "user_impersonation"
+    description: "Can impersonate other users"
+    severity: "critical"
+    resources: ["users"]
+    verbs: ["impersonate"]
+    api_groups: [""]
+
+  - name: "group_impersonation"
+    description: "Can impersonate groups"
+    severity: "critical"
+    resources: ["groups"]
+    verbs: ["impersonate"]
+    api_groups: [""]
+
+  - name: "service_account_impersonation"
+    description: "Can impersonate service accounts"
+    severity: "high"
+    resources: ["serviceaccounts"]
+    verbs: ["impersonate"]
+    api_groups: [""]
+
+  # ============================================================================
+  # SECURITY POLICY BYPASS
+  # ============================================================================
+  - name: "pod_security_policy_use"
+    description: "Can use pod security policies"
+    severity: "high"
+    resources: ["podsecuritypolicies"]
+    verbs: ["use"]
+    api_groups: ["policy"]
+
+  - name: "security_context_constraints_use"
+    description: "Can use OpenShift security context constraints"
+    severity: "high"
+    resources: ["securitycontextconstraints"]
+    verbs: ["use"]
+    api_groups: ["security.openshift.io"]
+
+  # ============================================================================
+  # STORAGE AND DATA ACCESS
+  # ============================================================================
+  - name: "persistent_volume_control"
+    description: "Full access to persistent volumes"
+    severity: "high"
+    resources: ["persistentvolumes"]
+    verbs: ["*"]
+    api_groups: [""]
+
+  - name: "persistent_volume_claim_control"
+    description: "Full access to persistent volume claims"
+    severity: "high"
+    resources: ["persistentvolumeclaims"]
+    verbs: ["*"]
+    api_groups: [""]
+
+  - name: "storage_class_manipulation"
+    description: "Can modify storage classes"
+    severity: "medium"
+    resources: ["storageclasses"]
+    verbs: ["*"]
+    api_groups: ["storage.k8s.io"]
+
+  - name: "csi_driver_manipulation"
+    description: "Can manipulate CSI drivers"
+    severity: "high"
+    resources: ["csidrivers"]
+    verbs: ["*"]
+    api_groups: ["storage.k8s.io"]
+
+  - name: "csi_node_manipulation"
+    description: "Can manipulate CSI nodes"
+    severity: "high"
+    resources: ["csinodes"]
+    verbs: ["*"]
+    api_groups: ["storage.k8s.io"]
+
+  # ============================================================================
+  # NETWORK SECURITY
+  # ============================================================================
+  - name: "network_policy_manipulation"
+    description: "Can modify network policies"
+    severity: "high"
+    resources: ["networkpolicies"]
+    verbs: ["*"]
+    api_groups: ["networking.k8s.io"]
+
+  - name: "ingress_manipulation"
+    description: "Can modify ingress resources"
+    severity: "medium"
+    resources: ["ingresses"]
+    verbs: ["*"]
+    api_groups: ["networking.k8s.io"]
+
+  # ============================================================================
+  # ADMISSION CONTROL BYPASS
+  # ============================================================================
+  - name: "mutating_admission_control"
+    description: "Can modify mutating admission configurations"
+    severity: "critical"
+    resources: ["mutatingadmissionconfigurations"]
+    verbs: ["*"]
+    api_groups: ["admissionregistration.k8s.io"]
+
+  - name: "validating_admission_control"
+    description: "Can modify validating admission configurations"
+    severity: "critical"
+    resources: ["validatingadmissionconfigurations"]
+    verbs: ["*"]
+    api_groups: ["admissionregistration.k8s.io"]
+
+  - name: "mutating_webhook_control"
+    description: "Can control mutating webhooks"
+    severity: "critical"
+    resources: ["mutatingwebhookconfigurations"]
+    verbs: ["*"]
+    api_groups: ["admissionregistration.k8s.io"]
+
+  - name: "validating_webhook_control"
+    description: "Can control validating webhooks"
+    severity: "critical"
+    resources: ["validatingwebhookconfigurations"]
+    verbs: ["*"]
+    api_groups: ["admissionregistration.k8s.io"]
+
+  # ============================================================================
+  # CERTIFICATE AND CRYPTOGRAPHIC ACCESS
+  # ============================================================================
+  - name: "certificate_signing_request_control"
+    description: "Can manipulate certificate signing requests"
+    severity: "high"
+    resources: ["certificatesigningrequests"]
+    verbs: ["*"]
+    api_groups: ["certificates.k8s.io"]
+
+  - name: "wildcard_secrets_access"
+    description: "Can access all named secrets"
+    severity: "critical"
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+    api_groups: [""]
+    resource_names: ["*"]
+
+  # ============================================================================
+  # EXTENSIBILITY AND CUSTOM RESOURCES
+  # ============================================================================
+  - name: "custom_resource_definition_control"
+    description: "Can manipulate custom resource definitions"
+    severity: "high"
+    resources: ["customresourcedefinitions"]
+    verbs: ["*"]
+    api_groups: ["apiextensions.k8s.io"]
+
+  # ============================================================================
+  # WORKLOAD MANAGEMENT
+  # ============================================================================
+  - name: "daemonset_manipulation"
+    description: "Can create/modify daemonsets (runs on all nodes)"
+    severity: "high"
+    resources: ["daemonsets"]
+    verbs: ["create", "update", "patch"]
+    api_groups: ["apps"]
+
+  - name: "priority_class_manipulation"
+    description: "Can manipulate priority classes"
+    severity: "medium"
+    resources: ["priorityclasses"]
+    verbs: ["*"]
+    api_groups: ["scheduling.k8s.io"]
+
+  # ============================================================================
+  # COORDINATION AND LEADERSHIP
+  # ============================================================================
+  - name: "lease_manipulation"
+    description: "Can manipulate coordination leases"
+    severity: "medium"
+    resources: ["leases"]
+    verbs: ["*"]
+    api_groups: ["coordination.k8s.io"]
+
+# ============================================================================
+# SEVERITY LEVELS DEFINITION
+# ============================================================================
+severity_levels:
+  critical:
+    description: "Immediate cluster compromise possible"
+    action: "Block by default, require explicit override"
+
+  high:
+    description: "Significant security risk, privilege escalation likely"
+    action: "Warn and require confirmation"
+
+  medium:
+    description: "Moderate security risk, information disclosure possible"
+    action: "Log warning, allow with notification"
+
+  low:
+    description: "Minor security concern"
+    action: "Log for audit purposes"

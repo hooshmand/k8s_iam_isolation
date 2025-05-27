@@ -637,6 +637,139 @@ class K8sClient:
         self.core_v1.create_namespace(body=ns_body)
         logger.info(f"Created namespace: {namespace}")
 
+    def _extract_rule_dict(self, rule):
+        """
+        Extract rule attributes into a standardized dictionary format.
+        Handles both object attributes and dictionary keys.
+
+        Args:
+            rule: RBAC rule (object or dict)
+
+        Returns:
+            dict: Standardized rule dictionary
+        """
+        if isinstance(rule, dict):
+            # Rule is already a dictionary
+            return {
+                "resources": rule.get("resources", []) or [],
+                "verbs": rule.get("verbs", []) or [],
+                "api_groups": rule.get("api_groups", []) or [],
+            }
+        else:
+            # Rule is an object with attributes
+            return {
+                "resources": getattr(rule, "resources", None) or [],
+                "verbs": getattr(rule, "verbs", None) or [],
+                "api_groups": getattr(rule, "api_groups", None) or [],
+            }
+
+    def _matches_combination(self, rule, dangerous_combo):
+        """
+        Check if an RBAC rule matches a dangerous combination pattern.
+
+        Args:
+            rule: RBAC rule object with attributes like resources, verbs, api_groups
+            dangerous_combo: Dictionary containing the dangerous pattern
+
+        Returns:
+            bool: True if the rule contains all permissions from the dangerous pattern
+        """
+        try:
+            rule_dict = self._extract_rule_dict(rule)
+
+            # Log the comparison for debugging
+            logger.debug(
+                f"Checking rule {rule_dict} against pattern {dangerous_combo.get('name', 'unnamed')}"
+            )
+
+            # Check each attribute in the dangerous combination
+            for key in ["resources", "verbs", "api_groups"]:
+                if key not in dangerous_combo:
+                    continue
+
+                dangerous_values = set(dangerous_combo[key])
+                rule_values = set(rule_dict.get(key, []))
+
+                # Skip empty dangerous patterns
+                if not dangerous_values:
+                    continue
+
+                # Check if dangerous pattern is subset of rule permissions
+                if not dangerous_values.issubset(rule_values):
+                    logger.debug(
+                        f"Pattern mismatch on {key}: {dangerous_values} not subset of {rule_values}"
+                    )
+                    return False
+
+            logger.debug(
+                f"Rule matches dangerous pattern: {dangerous_combo.get('name', 'unnamed')}"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Error matching rule against pattern: {e}")
+            return False
+
+    def validate_rbac_rules(
+        self,
+        rules: list,
+        config_file: str = "dangerous_rbac_combinations.yaml",
+    ) -> bool:
+        """Validate RBAC rules don't grant excessive permissions."""
+
+        try:
+            with open(config_file) as f:
+                config = yaml.safe_load(f)
+        except FileNotFoundError:
+            logger.error(f"Configuration file {config_file} not found")
+            return True
+        except yaml.YAMLError as e:
+            logger.error(f"Error parsing YAML configuration: {e}")
+            return True
+
+        for rule in rules:
+            for combo in config["dangerous_combinations"]:
+                if self._matches_combination(rule, combo):
+                    severity = combo.get("severity", "medium")
+                    name = combo.get("name", "unnamed_pattern")
+                    description = combo.get(
+                        "description", "No description available"
+                    )
+
+                    # Handle different severity levels
+                    if severity == "critical":
+                        logger.error(f"🚨 CRITICAL SECURITY RISK: {name}")
+                        logger.error(f"   Description: {description}")
+                        logger.error(
+                            f"   Rule: {self._extract_rule_dict(rule)}"
+                        )
+                        if not click.confirm(
+                            "⚠️  This poses an EXTREME security risk! Continue anyway?",
+                            abort=True,
+                        ):
+                            return False
+
+                    elif severity == "high":
+                        logger.warning(f"⚠️  HIGH SECURITY RISK: {name}")
+                        logger.warning(f"   Description: {description}")
+                        logger.warning(
+                            f"   Rule: {self._extract_rule_dict(rule)}"
+                        )
+                        if not click.confirm(
+                            "Continue with this high-risk permission?"
+                        ):
+                            return False
+
+                    elif severity == "medium":
+                        logger.info(f"ℹ️  MEDIUM SECURITY RISK: {name}")
+                        logger.info(f"   Description: {description}")
+                        # Continue without prompting for medium risk
+
+                    elif severity == "low":
+                        logger.debug(f"Low risk pattern detected: {name}")
+
+        return True
+
 
 @click.command()
 @click.pass_obj
@@ -725,6 +858,10 @@ def create(_obj: dict, entity_type, dry_run):
         policy_rules = _get_policy_rules(
             predefined_rules.get(policy_rule_name)
         )
+
+        if not k8c.validate_rbac_rules(policy_rules):
+            raise click.Abort()
+
         k8c.upsert_custom_role(role_name, namespace, policy_rules)
 
         k8c.upsert_custom_rolebinding(
