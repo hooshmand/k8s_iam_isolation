@@ -320,7 +320,7 @@ class K8sClient:
 
     def _cluster_role_body(
         self, name: str, rules: list[client.V1PolicyRule]
-    ) -> client.V1Role:
+    ) -> client.V1ClusterRole:
         """
         Create a Cluster Role body.
 
@@ -331,7 +331,7 @@ class K8sClient:
         Returns:
             The created V1Role body
         """
-        role_body = client.V1Role(
+        role_body = client.V1ClusterRole(
             api_version="rbac.authorization.k8s.io/v1",
             kind="ClusterRole",
             metadata=client.V1ObjectMeta(name=name),
@@ -343,7 +343,7 @@ class K8sClient:
     @dry_run_guard(_cluster_role_body)
     def upsert_custom_cluster_role(
         self, name: str, rules: list[client.V1PolicyRule]
-    ) -> client.V1Role:
+    ) -> client.V1ClusterRole:
         """
         Update or Create a custom Cluster Role with specific permissions.
 
